@@ -1,0 +1,93 @@
+:root {
+  /* Core archival reading-room palette */
+  --bg-paper: #f9fafb;
+  --bg-surface: #ffffff;
+  --bg-rail: #f1f5f7;
+  --bg-hover: #e7eef2;
+
+  /* Deep slate ink hierarchy */
+  --ink-primary: #14212b;
+  --ink-secondary: #394d5d;
+  --ink-muted: #5a6f7f;
+
+  /* Archival forest-teal accent */
+  --accent-ink: #0f5c4d;
+  --accent-ink-hover: #0a453a;
+  --accent-soft: #e3f1ed;
+  --accent-highlight: #d2eae3;
+
+  /* Structural hairlines */
+  --border-hairline: #dce4ea;
+  --border-strong: #bfd0db;
+
+  /* Semantic states */
+  --danger-ink: #a62b2b;
+  --danger-soft: #fdf0f0;
+  --warn-ink: #8a5612;
+  --warn-soft: #fbf4e6;
+
+  /* Typography */
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Layout metrics */
+  --rail-width: 268px;
+  --inspector-width: 360px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-paper);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
