@@ -1,16 +1,20 @@
-import { BookOpen, FileText, MessageSquare, Plus } from 'lucide-react';
+import { useMemo } from 'react';
+import { BookOpen, FileText, MessageSquare, Plus, RefreshCw } from 'lucide-react';
 import { apiBaseUrl, isMockMode } from '../api/ragClient';
-import type { DocumentCategory, DocumentItem } from '../types/rag';
+import type { ConnectionState, DocumentCategory, DocumentItem, HealthResponse } from '../types/rag';
 
-const CATEGORIES: DocumentCategory[] = ['Nhân sự', 'Vận hành', 'Kỹ thuật & IT'];
+const DEFAULT_CATEGORIES: DocumentCategory[] = ['Nhân sự', 'Vận hành', 'Kỹ thuật & IT'];
 
 interface SidebarProps {
   activeView: 'chat' | 'library';
   onSelectView: (view: 'chat' | 'library') => void;
   onNewChat: () => void;
   documents: DocumentItem[];
-  onToggleCategory: (category: DocumentCategory) => void;
+  onToggleCategory: (category: DocumentCategory | string) => void;
   onEnableAllDocuments: () => void;
+  connectionState: ConnectionState;
+  healthInfo: HealthResponse | null;
+  onRetryConnection: () => void;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
 }
@@ -22,11 +26,39 @@ export function Sidebar({
   documents,
   onToggleCategory,
   onEnableAllDocuments,
+  connectionState,
+  healthInfo,
+  onRetryConnection,
   isOpenMobile,
   onCloseMobile,
 }: SidebarProps) {
   const readyDocs = documents.filter((d) => d.status === 'ready');
   const enabledCount = readyDocs.filter((d) => d.enabled).length;
+
+  const categories = useMemo(() => {
+    const extra = documents
+      .map((d) => d.category)
+      .filter((c): c is string => Boolean(c) && !DEFAULT_CATEGORIES.includes(c as DocumentCategory));
+    return [...DEFAULT_CATEGORIES, ...Array.from(new Set(extra))];
+  }, [documents]);
+
+  const statusLabel = isMockMode
+    ? 'Chế độ dữ liệu mẫu'
+    : connectionState === 'connected'
+      ? 'Đã kết nối Backend'
+      : connectionState === 'degraded'
+        ? 'Backend chạy (DB lỗi)'
+        : connectionState === 'checking'
+          ? 'Đang kiểm tra kết nối...'
+          : 'Mất kết nối Backend';
+
+  const statusDotClass = isMockMode ? 'connected' : connectionState;
+
+  const connectionDetail = isMockMode
+    ? 'Sẵn sàng nối FastAPI qua .env'
+    : healthInfo
+      ? `${healthInfo.embedding_provider} · ${healthInfo.vectordb.vector_mode ?? healthInfo.vectordb.backend}`
+      : apiBaseUrl;
 
   return (
     <aside className={`sidebar ${isOpenMobile ? 'open' : ''}`} aria-label="Điều hướng chính">
@@ -89,7 +121,7 @@ export function Sidebar({
         </div>
 
         <div className="scope-list">
-          {CATEGORIES.map((category) => {
+          {categories.map((category) => {
             const catDocs = readyDocs.filter((d) => d.category === category);
             const activeInCat = catDocs.filter((d) => d.enabled).length;
             const isChecked = catDocs.length > 0 && activeInCat > 0;
@@ -116,12 +148,26 @@ export function Sidebar({
       </section>
 
       <div className="sidebar-footer">
-        <div className="connection-status">
-          <span className="status-dot" aria-hidden="true" />
-          <span>{isMockMode ? 'Chế độ dữ liệu mẫu' : 'Đang kết nối API'}</span>
+        <div className="connection-row">
+          <div className="connection-status">
+            <span className={`status-dot ${statusDotClass}`} aria-hidden="true" />
+            <span>{statusLabel}</span>
+          </div>
+          {!isMockMode && (
+            <button
+              type="button"
+              className="retry-link-btn"
+              onClick={onRetryConnection}
+              disabled={connectionState === 'checking'}
+              title="Kiểm tra lại kết nối và tải lại dữ liệu"
+            >
+              <RefreshCw size={12} className={connectionState === 'checking' ? 'spin' : ''} />
+              <span>Thử lại</span>
+            </button>
+          )}
         </div>
         <div className="connection-detail" title={isMockMode ? 'VITE_USE_MOCK=true' : apiBaseUrl}>
-          {isMockMode ? 'Sẵn sàng nối FastAPI qua .env' : apiBaseUrl}
+          {connectionDetail}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
           <BookOpen size={12} />

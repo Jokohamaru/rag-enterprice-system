@@ -6,6 +6,7 @@ from fastapi import Request
 
 from src.config.settings import Settings
 from src.ingestion.pipeline import IngestionPipeline
+from src.retrieval.service import RAGQueryService
 from src.storage.kb_store import KnowledgeBaseStore
 from src.vectordb.base import VectorStore
 
@@ -16,6 +17,7 @@ class AppServices:
     kb_store: KnowledgeBaseStore
     vector_store: VectorStore
     pipeline: IngestionPipeline
+    query_service: RAGQueryService
 
 
 def get_services(request: Request) -> AppServices:

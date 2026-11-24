@@ -5,12 +5,15 @@ import type {
   DocumentChunk,
   DocumentFormat,
   DocumentItem,
+  HealthResponse,
+  IngestionJobResult,
   QueryRequest,
   QueryResponse,
 } from '../types/rag';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8000/api/v1';
+const RAW_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8000/api/v1';
+const API_BASE_URL = RAW_BASE_URL.replace(/\/+$/, '');
 
 export const isMockMode = USE_MOCK;
 export const apiBaseUrl = API_BASE_URL;
@@ -18,6 +21,31 @@ export const apiBaseUrl = API_BASE_URL;
 // In-memory store for mock mode so uploaded documents become immediately searchable
 let mockDocuments: DocumentItem[] = [...INITIAL_DOCUMENTS];
 let mockChunks: DocumentChunk[] = [...INITIAL_CHUNKS];
+
+async function parseApiError(res: Response, fallback: string): Promise<string> {
+  try {
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = (await res.json()) as { detail?: unknown; message?: unknown };
+      if (typeof data.detail === 'string' && data.detail.trim()) {
+        return data.detail;
+      }
+      if (Array.isArray(data.detail) && data.detail.length > 0) {
+        const first = data.detail[0] as { msg?: string };
+        if (first?.msg) return first.msg;
+      }
+      if (typeof data.message === 'string' && data.message.trim()) {
+        return data.message;
+      }
+    } else {
+      const text = (await res.text()).trim();
+      if (text) return text;
+    }
+  } catch {
+    // Ignore parse errors and return fallback below
+  }
+  return `${fallback} (HTTP ${res.status}).`;
+}
 
 function normalizeText(input: string): string {
   return input
@@ -44,7 +72,6 @@ function scoreChunk(queryNorm: string, chunk: DocumentChunk): number {
     }
   }
 
-  // Domain keyword boosters for Vietnamese enterprise queries
   const boosters: Array<[string[], string]> = [
     [['phep', 'nghi', 'hybrid', 'remote', 'tu xa'], 'doc-hr-leave'],
     [['thu viec', 'onboarding', 'hoi nhap', 'okr'], 'doc-hr-onboarding'],
@@ -95,7 +122,6 @@ function buildMockAnswer(question: string, citations: CitationItem[]): string {
     return `Đối với sự cố hạ tầng mức **Sev-1**, kỹ sư trực on-call phải xác nhận cảnh báo trong vòng **10 phút**, mở kênh điều phối ngay lập tức và hoàn thiện báo cáo phân tích nguyên nhân gốc (Post-mortem) trong vòng **48 giờ** sau khi hệ thống ổn định [${c1}].\n\nNếu phát hiện dấu hiệu rò rỉ hoặc gửi nhầm dữ liệu khách hàng (Cấp độ 3 - Mật), cần báo ngay cho đội An toàn thông tin qua kênh **#security-incident** hoặc email **secops@company.vn** trong vòng tối đa **2 giờ** [${c2}].`;
   }
 
-  // Generic grounded synthesis from top retrieved chunks
   const paragraphs = citations.slice(0, 2).map((c) => {
     return `Theo tài liệu **${c.documentTitle}** (${c.section}), ${c.content.charAt(0).toLowerCase()}${c.content.slice(1)} [${c.citationNumber}]`;
   });
@@ -117,15 +143,58 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatDateToday(): string {
+  const now = new Date();
+  return `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/health`);
+    if (!res.ok) {
+      throw new Error(await parseApiError(res, 'Không thể kiểm tra trạng thái Backend'));
+    }
+    return res.json();
+  }
+
+  await new Promise((r) => setTimeout(r, 60));
+  return {
+    status: 'ok',
+    embedding_provider: 'mock',
+    chunking_strategy: 'recursive',
+    contextual_mode: 'header',
+    vectordb: { ok: true, backend: 'mock', vector_mode: 'memory' },
+    stats: {
+      documents: mockDocuments.length,
+      chunks: mockChunks.length,
+    },
+  };
+}
+
 export async function fetchDocuments(): Promise<DocumentItem[]> {
   if (!USE_MOCK) {
     const res = await fetch(`${API_BASE_URL}/documents`);
-    if (!res.ok) throw new Error(`Không thể tải danh sách tài liệu (${res.status}).`);
+    if (!res.ok) {
+      throw new Error(await parseApiError(res, 'Không thể tải danh sách tài liệu'));
+    }
     return res.json();
   }
 
   await new Promise((r) => setTimeout(r, 120));
   return [...mockDocuments];
+}
+
+export async function fetchDocumentChunks(documentId: string): Promise<DocumentChunk[]> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(documentId)}/chunks`);
+    if (!res.ok) {
+      throw new Error(await parseApiError(res, 'Không thể tải danh sách đoạn văn bản'));
+    }
+    return res.json();
+  }
+
+  await new Promise((r) => setTimeout(r, 80));
+  return mockChunks.filter((c) => c.documentId === documentId);
 }
 
 export async function queryRag(req: QueryRequest): Promise<QueryResponse> {
@@ -137,7 +206,9 @@ export async function queryRag(req: QueryRequest): Promise<QueryResponse> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     });
-    if (!res.ok) throw new Error(`Truy vấn thất bại (${res.status}). Kiểm tra lại kết nối backend.`);
+    if (!res.ok) {
+      throw new Error(await parseApiError(res, 'Truy vấn thất bại'));
+    }
     return res.json();
   }
 
@@ -157,7 +228,6 @@ export async function queryRag(req: QueryRequest): Promise<QueryResponse> {
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);
 
-  // Fallback to top chunks in allowed scope if query is very broad
   const selected =
     ranked.length > 0
       ? ranked
@@ -181,28 +251,55 @@ export async function queryRag(req: QueryRequest): Promise<QueryResponse> {
 export async function uploadDocument(
   file: File,
   category: DocumentCategory,
-  onStatusChange?: (doc: DocumentItem) => void
+  onStatusChange?: (doc: DocumentItem, replacedId?: string) => void,
+  onUploadFailed?: (tempId: string) => void
 ): Promise<DocumentItem> {
+  const dateLabel = formatDateToday();
+  const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]+/g, ' ');
+  const formattedTitle = cleanTitle ? cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1) : file.name;
+
   if (!USE_MOCK) {
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const tempDoc: DocumentItem = {
+      id: tempId,
+      title: formattedTitle,
+      filename: file.name,
+      format: detectFormat(file.name),
+      category,
+      sizeLabel: formatFileSize(file.size),
+      chunkCount: 0,
+      updatedAt: dateLabel,
+      status: 'embedding',
+      enabled: true,
+      summary: 'Đang tải lên và lập chỉ mục vào hệ thống...',
+    };
+    onStatusChange?.(tempDoc);
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('category', category);
-    const res = await fetch(`${API_BASE_URL}/documents/upload`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (!res.ok) throw new Error(`Tải tài liệu thất bại (${res.status}).`);
-    return res.json();
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/documents/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) {
+        throw new Error(await parseApiError(res, `Tải tài liệu "${file.name}" thất bại`));
+      }
+      const savedDoc = (await res.json()) as DocumentItem;
+      onStatusChange?.(savedDoc, tempId);
+      return savedDoc;
+    } catch (err) {
+      onUploadFailed?.(tempId);
+      throw err;
+    }
   }
 
-  const now = new Date();
-  const dateLabel = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-  const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]+/g, ' ');
-  const docId = `doc-custom-${Date.now()}`;
-
+  const docId = `doc-custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const draftDoc: DocumentItem = {
     id: docId,
-    title: cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1),
+    title: formattedTitle,
     filename: file.name,
     format: detectFormat(file.name),
     category,
@@ -217,7 +314,6 @@ export async function uploadDocument(
   mockDocuments = [draftDoc, ...mockDocuments];
   onStatusChange?.(draftDoc);
 
-  // Read plain text preview if MD/TXT
   let textPreview = '';
   if (file.name.endsWith('.md') || file.name.endsWith('.txt')) {
     try {
@@ -258,16 +354,70 @@ export async function uploadDocument(
   return readyDoc;
 }
 
+export async function updateDocumentEnabled(documentId: string, enabled: boolean): Promise<DocumentItem> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(documentId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) {
+      throw new Error(await parseApiError(res, 'Không thể cập nhật trạng thái tài liệu'));
+    }
+    return res.json();
+  }
+
+  await new Promise((r) => setTimeout(r, 80));
+  const found = mockDocuments.find((d) => d.id === documentId);
+  if (!found) {
+    throw new Error('Không tìm thấy tài liệu.');
+  }
+  const updated = { ...found, enabled };
+  mockDocuments = mockDocuments.map((d) => (d.id === documentId ? updated : d));
+  return updated;
+}
+
 export async function deleteDocument(documentId: string): Promise<void> {
   if (!USE_MOCK) {
-    const res = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+    const res = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(documentId)}`, {
       method: 'DELETE',
     });
-    if (!res.ok) throw new Error(`Không thể xóa tài liệu (${res.status}).`);
+    if (!res.ok) {
+      throw new Error(await parseApiError(res, 'Không thể xóa tài liệu'));
+    }
     return;
   }
 
   await new Promise((r) => setTimeout(r, 150));
   mockDocuments = mockDocuments.filter((d) => d.id !== documentId);
   mockChunks = mockChunks.filter((c) => c.documentId !== documentId);
+}
+
+export async function syncKnowledgeBase(force = false): Promise<IngestionJobResult> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/ingestion/sync?force=${force ? 'true' : 'false'}`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      throw new Error(await parseApiError(res, 'Đồng bộ kho tri thức thất bại'));
+    }
+    return res.json();
+  }
+
+  await new Promise((r) => setTimeout(r, 200));
+  const now = new Date().toISOString();
+  return {
+    job_id: `mock-job-${Date.now()}`,
+    trigger: 'sync',
+    status: 'completed',
+    processed_files: mockDocuments.length,
+    indexed_files: 0,
+    skipped_files: mockDocuments.length,
+    failed_files: 0,
+    total_chunks: mockChunks.length,
+    document_ids: mockDocuments.map((d) => d.id),
+    errors: [],
+    started_at: now,
+    finished_at: now,
+  };
 }

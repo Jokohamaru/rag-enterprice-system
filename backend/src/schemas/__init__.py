@@ -16,9 +16,11 @@ from src.schemas.document import (
     MetadataAttributes,
     MetadataSidecar,
 )
+from src.schemas.query import CitationItem, QueryRequest, QueryResponse
 
 __all__ = [
     "ChunkRecord",
+    "CitationItem",
     "DLQRecord",
     "DocumentFormat",
     "DocumentItem",
@@ -30,6 +32,8 @@ __all__ = [
     "MetadataAttributes",
     "MetadataSidecar",
     "ParentChunk",
+    "QueryRequest",
+    "QueryResponse",
     "SearchFilter",
     "SearchResult",
 ]

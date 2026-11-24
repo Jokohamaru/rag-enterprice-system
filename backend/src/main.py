@@ -6,10 +6,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.deps import AppServices
-from src.api.routes import documents_router, health_router, ingestion_router
+from src.api.routes import documents_router, health_router, ingestion_router, query_router
 from src.config.settings import Settings, get_settings
 from src.ingestion.pipeline import IngestionPipeline, build_embedder
 from src.ingestion.sparse_indexer import SparseBM25Index
+from src.retrieval.service import RAGQueryService
 from src.storage.kb_store import KnowledgeBaseStore
 from src.vectordb.base import VectorStore
 from src.vectordb.mongodb_store import MongoDBVectorStore
@@ -40,11 +41,18 @@ def build_services(
         embedder=embedder,
         bm25_index=bm25,
     )
+    query_service = RAGQueryService(
+        settings=settings,
+        vector_store=store,
+        embedder=embedder,
+        bm25_index=bm25,
+    )
     return AppServices(
         settings=settings,
         kb_store=kb_store,
         vector_store=store,
         pipeline=pipeline,
+        query_service=query_service,
     )
 
 
@@ -80,6 +88,7 @@ def create_app(
     application.include_router(health_router, prefix="/api/v1")
     application.include_router(documents_router, prefix="/api/v1")
     application.include_router(ingestion_router, prefix="/api/v1")
+    application.include_router(query_router, prefix="/api/v1")
     return application
 
 

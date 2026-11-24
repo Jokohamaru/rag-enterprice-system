@@ -1,27 +1,47 @@
-import { useRef, useState } from 'react';
-import { CheckCircle2, Loader2, Search, Trash2, Upload } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react';
+import { isMockMode } from '../api/ragClient';
 import type { DocumentCategory, DocumentItem } from '../types/rag';
 
-const CATEGORIES: DocumentCategory[] = ['Nhân sự', 'Vận hành', 'Kỹ thuật & IT'];
+const DEFAULT_CATEGORIES: DocumentCategory[] = ['Nhân sự', 'Vận hành', 'Kỹ thuật & IT'];
 
 interface LibraryViewProps {
   documents: DocumentItem[];
+  isLoading: boolean;
+  error: string | null;
+  onDismissError: () => void;
   onUploadFiles: (files: FileList, category: DocumentCategory) => void;
   onToggleDocument: (documentId: string) => void;
   onDeleteDocument: (documentId: string) => void;
+  onSyncKnowledgeBase: () => void;
+  isSyncing: boolean;
+  deletingDocIds: Set<string>;
 }
 
 export function LibraryView({
   documents,
+  isLoading,
+  error,
+  onDismissError,
   onUploadFiles,
   onToggleDocument,
   onDeleteDocument,
+  onSyncKnowledgeBase,
+  isSyncing,
+  deletingDocIds,
 }: LibraryViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterCategory, setFilterCategory] = useState<'Tất cả' | DocumentCategory>('Tất cả');
+  const [filterCategory, setFilterCategory] = useState<string>('Tất cả');
   const [uploadCategory, setUploadCategory] = useState<DocumentCategory>('Nhân sự');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const filterCategories = useMemo(() => {
+    const extra = documents
+      .map((d) => d.category)
+      .filter((c): c is string => Boolean(c) && !DEFAULT_CATEGORIES.includes(c as DocumentCategory));
+    return ['Tất cả', ...DEFAULT_CATEGORIES, ...Array.from(new Set(extra))];
+  }, [documents]);
 
   const filteredDocs = documents.filter((doc) => {
     const matchesCat = filterCategory === 'Tất cả' || doc.category === filterCategory;
@@ -52,8 +72,8 @@ export function LibraryView({
     }
   };
 
-  const renderStatus = (status: DocumentItem['status']) => {
-    if (status === 'ready') {
+  const renderStatus = (doc: DocumentItem) => {
+    if (doc.status === 'ready') {
       return (
         <span className="doc-status ready">
           <CheckCircle2 size={14} />
@@ -61,7 +81,7 @@ export function LibraryView({
         </span>
       );
     }
-    if (status === 'chunking') {
+    if (doc.status === 'chunking') {
       return (
         <span className="doc-status processing">
           <Loader2 size={14} className="spin" />
@@ -69,7 +89,7 @@ export function LibraryView({
         </span>
       );
     }
-    if (status === 'embedding') {
+    if (doc.status === 'embedding') {
       return (
         <span className="doc-status processing">
           <Loader2 size={14} className="spin" />
@@ -77,7 +97,12 @@ export function LibraryView({
         </span>
       );
     }
-    return <span className="doc-status">Lỗi xử lý</span>;
+    return (
+      <span className="doc-status error" title={doc.error_message ?? 'Lỗi xử lý tài liệu'}>
+        <AlertCircle size={14} />
+        <span>Lỗi xử lý</span>
+      </span>
+    );
   };
 
   return (
@@ -100,17 +125,46 @@ export function LibraryView({
               </p>
             </div>
 
-            <div className="library-stats">
-              <div className="stat-item">
-                <span className="stat-num">{activeDocsCount}</span>
-                <span className="stat-label">Đang bật</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-num">{totalChunks}</span>
-                <span className="stat-label">Tổng đoạn văn</span>
+            <div className="library-header-actions">
+              {!isMockMode && (
+                <button
+                  type="button"
+                  className="sync-btn"
+                  onClick={onSyncKnowledgeBase}
+                  disabled={isSyncing}
+                  title="Quét thư mục Knowledge Base trên Backend để đồng bộ tài liệu mới"
+                >
+                  <RefreshCw size={14} className={isSyncing ? 'spin' : ''} />
+                  <span>{isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ KB'}</span>
+                </button>
+              )}
+
+              <div className="library-stats">
+                <div className="stat-item">
+                  <span className="stat-num">{activeDocsCount}</span>
+                  <span className="stat-label">Đang bật</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-num">{totalChunks}</span>
+                  <span className="stat-label">Tổng đoạn văn</span>
+                </div>
               </div>
             </div>
           </div>
+
+          {error && (
+            <div className="error-banner error-banner-row" role="alert" style={{ marginBottom: 20 }}>
+              <span>{error}</span>
+              <button
+                type="button"
+                className="error-dismiss-btn"
+                onClick={onDismissError}
+                aria-label="Đóng thông báo lỗi"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
           <div
             className={`upload-zone ${isDragging ? 'dragging' : ''}`}
@@ -140,7 +194,7 @@ export function LibraryView({
                 value={uploadCategory}
                 onChange={(e) => setUploadCategory(e.target.value as DocumentCategory)}
               >
-                {CATEGORIES.map((cat) => (
+                {DEFAULT_CATEGORIES.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
@@ -180,7 +234,7 @@ export function LibraryView({
             </div>
 
             <div className="filter-tabs" role="tablist" aria-label="Lọc theo danh mục">
-              {(['Tất cả', ...CATEGORIES] as const).map((cat) => (
+              {filterCategories.map((cat) => (
                 <button
                   key={cat}
                   type="button"
@@ -205,62 +259,77 @@ export function LibraryView({
               <span role="columnheader" aria-label="Thao tác" />
             </div>
 
-            {filteredDocs.length === 0 ? (
+            {isLoading && documents.length === 0 ? (
+              <div style={{ padding: '28px 20px', color: 'var(--ink-muted)', fontSize: 14 }}>
+                Đang tải danh sách tài liệu từ hệ thống...
+              </div>
+            ) : filteredDocs.length === 0 ? (
               <div style={{ padding: '28px 20px', color: 'var(--ink-muted)', fontSize: 14 }}>
                 Không tìm thấy tài liệu phù hợp với bộ lọc hiện tại.
               </div>
             ) : (
-              filteredDocs.map((doc) => (
-                <div
-                  key={doc.id}
-                  role="row"
-                  className={`doc-row ${!doc.enabled ? 'disabled' : ''}`}
-                >
-                  <div role="cell">
-                    <input
-                      type="checkbox"
-                      className="scope-checkbox"
-                      checked={doc.enabled}
-                      disabled={doc.status !== 'ready'}
-                      onChange={() => onToggleDocument(doc.id)}
-                      aria-label={`Dùng tài liệu ${doc.title} khi hỏi đáp`}
-                    />
-                  </div>
+              filteredDocs.map((doc) => {
+                const isDeleting = deletingDocIds.has(doc.id);
+                return (
+                  <div
+                    key={doc.id}
+                    role="row"
+                    className={`doc-row ${!doc.enabled ? 'disabled' : ''}`}
+                  >
+                    <div role="cell">
+                      <input
+                        type="checkbox"
+                        className="scope-checkbox"
+                        checked={doc.enabled}
+                        disabled={doc.status !== 'ready'}
+                        onChange={() => onToggleDocument(doc.id)}
+                        aria-label={`Dùng tài liệu ${doc.title} khi hỏi đáp`}
+                      />
+                    </div>
 
-                  <div className="doc-title-cell" role="cell">
-                    <p className="doc-name" title={doc.title}>
-                      {doc.title}
-                    </p>
-                    <div className="doc-sub-meta">
-                      {doc.filename} ({doc.sizeLabel}) — Cập nhật {doc.updatedAt}
+                    <div className="doc-title-cell" role="cell">
+                      <p className="doc-name" title={doc.title}>
+                        {doc.title}
+                      </p>
+                      <div className="doc-sub-meta">
+                        {doc.filename} ({doc.sizeLabel}) — Cập nhật {doc.updatedAt}
+                        {doc.status === 'error' && doc.error_message
+                          ? ` · ${doc.error_message}`
+                          : ''}
+                      </div>
+                    </div>
+
+                    <div className="doc-hide-sm" role="cell">
+                      <span className="doc-category-tag">{doc.category}</span>
+                    </div>
+
+                    <div className="doc-hide-sm doc-mono" role="cell">
+                      {doc.chunkCount}
+                    </div>
+
+                    <div className="doc-hide-sm" role="cell">
+                      {renderStatus(doc)}
+                    </div>
+
+                    <div role="cell">
+                      <button
+                        type="button"
+                        className="delete-btn"
+                        disabled={isDeleting}
+                        onClick={() => onDeleteDocument(doc.id)}
+                        title={`Xóa tài liệu ${doc.title}`}
+                        aria-label={`Xóa tài liệu ${doc.title}`}
+                      >
+                        {isDeleting ? (
+                          <Loader2 size={15} className="spin" />
+                        ) : (
+                          <Trash2 size={15} />
+                        )}
+                      </button>
                     </div>
                   </div>
-
-                  <div className="doc-hide-sm" role="cell">
-                    <span className="doc-category-tag">{doc.category}</span>
-                  </div>
-
-                  <div className="doc-hide-sm doc-mono" role="cell">
-                    {doc.chunkCount}
-                  </div>
-
-                  <div className="doc-hide-sm" role="cell">
-                    {renderStatus(doc.status)}
-                  </div>
-
-                  <div role="cell">
-                    <button
-                      type="button"
-                      className="delete-btn"
-                      onClick={() => onDeleteDocument(doc.id)}
-                      title={`Xóa tài liệu ${doc.title}`}
-                      aria-label={`Xóa tài liệu ${doc.title}`}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

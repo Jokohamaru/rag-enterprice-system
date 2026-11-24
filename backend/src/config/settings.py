@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     gemini_embedding_model: str = "gemini-embedding-001"
     gemini_embedding_dim: int = Field(default=768, ge=64, le=3072)
     gemini_context_model: str = "gemini-2.0-flash"
+    gemini_generation_model: str = "gemini-2.0-flash"
 
     # MongoDB Vector Database
     mongodb_uri: str = "mongodb://admin:password123@localhost:27017/?authSource=admin"
@@ -72,7 +73,7 @@ class Settings(BaseSettings):
     contextual_mode: Literal["header", "llm"] = "header"
 
     # API
-    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
 
     @property
     def resolved_storage_dir(self) -> Path:

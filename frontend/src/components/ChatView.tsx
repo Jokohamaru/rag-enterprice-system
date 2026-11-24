@@ -208,7 +208,7 @@ export function ChatView({
                                   <span className="source-pill-num">[{cit.citationNumber}]</span>
                                   <span className="source-pill-title">
                                     {cit.documentTitle}
-                                    {cit.page !== undefined ? ` (Tr. ${cit.page})` : ''}
+                                    {cit.page != null ? ` (Tr. ${cit.page})` : ''}
                                   </span>
                                 </button>
                               );

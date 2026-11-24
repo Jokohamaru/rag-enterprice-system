@@ -10,7 +10,7 @@ interface SourceInspectorProps {
   onCloseDrawer: () => void;
 }
 
-function renderHighlightedExcerpt(content: string, highlight?: string) {
+function renderHighlightedExcerpt(content: string, highlight?: string | null) {
   if (!highlight) return content;
   const idx = content.toLowerCase().indexOf(highlight.toLowerCase());
   if (idx === -1) return content;
@@ -115,7 +115,7 @@ export function SourceInspector({
 
                   <div className="chunk-meta-line">
                     <span>{item.section}</span>
-                    {item.page !== undefined && <span>Trang {item.page}</span>}
+                    {item.page != null && <span>Trang {item.page}</span>}
                     <span className="doc-mono">Đoạn #{item.chunkIndex}</span>
                   </div>
 
