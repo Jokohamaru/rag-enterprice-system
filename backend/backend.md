@@ -1,6 +1,6 @@
 # Tài liệu Kỹ thuật & Vận hành Backend: Data Ingestion Pipeline & Vector Database
 
-Tài liệu này mô tả chi tiết cách cài đặt, cấu hình, vận hành và kiến trúc mã nguồn của phân hệ **Backend** (`backend/`) cho giai đoạn:
+Tài liệu này mô tả chi tiết cách cài đặt, cấu hình, vận hành và kiến trúc mã nguồn của phân hệ **Backend** (`E:\A\rag-enterprice-system\backend`) cho giai đoạn:
 
 **Knowledge Base / Source Documents -> Data Ingestion Pipeline -> Vector Database (MongoDB Dual-Mode)**
 
@@ -8,13 +8,13 @@ Tài liệu này mô tả chi tiết cách cài đặt, cấu hình, vận hành
 
 ## Mục lục
 
-1. [Tổng quan hệ thống &amp; Kiến trúc](#1-tổng-quan-hệ-thống--kiến-trúc)
-2. [Yêu cầu môi trường &amp; Hướng dẫn Setup từng bước](#2-yêu-cầu-môi-trường--hướng-dẫn-setup-từng-bước)
-3. [Hướng dẫn Chạy hệ thống &amp; Sử dụng (Operations Guide)](#3-hướng-dẫn-chạy-hệ-thống--sử-dụng-operations-guide)
-4. [Cây thư mục &amp; Giải thích chi tiết từng thành phần và đoạn code](#4-cây-thư-mục--giải-thích-chi-tiết-từng-thành-phần-và-đoạn-code)
-5. [Cơ chế Bảo mật &amp; Cô lập dữ liệu theo phòng ban](#5-cơ-chế-bảo-mật--cô-lập-dữ-liệu-theo-phòng-ban)
+1. [Tổng quan hệ thống & Kiến trúc](#1-tổng-quan-hệ-thống--kiến-trúc)
+2. [Yêu cầu môi trường & Hướng dẫn Setup từng bước](#2-yêu-cầu-môi-trường--hướng-dẫn-setup-từng-bước)
+3. [Hướng dẫn Chạy hệ thống & Sử dụng (Operations Guide)](#3-hướng-dẫn-chạy-hệ-thống--sử-dụng-operations-guide)
+4. [Cây thư mục & Giải thích chi tiết từng thành phần và đoạn code](#4-cây-thư-mục--giải-thích-chi-tiết-từng-thành-phần-và-đoạn-code)
+5. [Cơ chế Bảo mật & Cô lập dữ liệu theo phòng ban](#5-cơ-chế-bảo-mật--cô-lập-dữ-liệu-theo-phòng-ban)
 6. [Giải thích Bộ kiểm thử (`backend/tests/`)](#6-giải-thích-bộ-kiểm-thử-backendtests)
-7. [Xử lý sự cố thường gặp &amp; Điểm nối giai đoạn tiếp theo](#7-xử-lý-sự-cố-thường-gặp--điểm-nối-giai-đoạn-tiếp-theo)
+7. [Xử lý sự cố thường gặp & Điểm nối giai đoạn tiếp theo](#7-xử-lý-sự-cố-thường-gặp--điểm-nối-giai-đoạn-tiếp-theo)
 
 ---
 
@@ -37,11 +37,11 @@ flowchart LR
 
 ### Ánh xạ nguyên lý thiết kế từ tài liệu tham khảo
 
-| Tài liệu nguồn                                                                                              | Nguyên lý áp dụng                                                                                                                                            | Thành phần thực thi trong `backend/src/`                                                                         |
-| :------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------- |
-| **AWS Multi-Tenant RAG** (`Secure_multi_tenant_RAG_with_Amazon_Bedrock_and_Verified_Permissions.docx`) | Shared KB + Logical Isolation theo phòng ban; Two-phase ingestion với `.metadata.json` sidecar safeguard; Dead-Letter Queue (DLQ)                            | `storage/kb_store.py`, `schemas/document.py`, `ingestion/pipeline.py`, `vectordb/mongodb_store.py`            |
-| **AI VIET NAM RAG Tutorial** (`RAG_Tutorial_AI_VIET_NAM_114_pages.pdf`)                                | Document Loading + Metadata; Recursive / Semantic / Parent-Child (Small-to-Big); chuẩn bị sẵn BM25 cho Hybrid Search; cân chỉnh độ chính xác tìm kiếm | `ingestion/loaders/*`, `ingestion/chunkers/*`, `ingestion/sparse_indexer.py`, `vectordb/mongodb_store.py`     |
-| **RAG Architectures 2025** (`RAG_Architectures_A_Complete_Guide_for_2025.pdf`)                         | 4 bước Offline Indexing: Extract & Clean -> Chunking -> Dense Bi-Encoder -> Metadata & Contextual Retrieval; Vector DB lưu vector kèm full payload           | `ingestion/cleaner.py`, `ingestion/enricher.py`, `ingestion/embedders/gemini_embedder.py`, `schemas/chunk.py` |
+| Tài liệu nguồn | Nguyên lý áp dụng | Thành phần thực thi trong `backend/src/` |
+| :--- | :--- | :--- |
+| **AWS Multi-Tenant RAG** (`Secure_multi_tenant_RAG_with_Amazon_Bedrock_and_Verified_Permissions.docx`) | Shared KB + Logical Isolation theo phòng ban; Two-phase ingestion với `.metadata.json` sidecar safeguard; Dead-Letter Queue (DLQ) | `storage/kb_store.py`, `schemas/document.py`, `ingestion/pipeline.py`, `vectordb/mongodb_store.py` |
+| **AI VIET NAM RAG Tutorial** (`RAG_Tutorial_AI_VIET_NAM_114_pages.pdf`) | Document Loading + Metadata; Recursive / Semantic / Parent-Child (Small-to-Big); chuẩn bị sẵn BM25 cho Hybrid Search; cân chỉnh độ chính xác tìm kiếm | `ingestion/loaders/*`, `ingestion/chunkers/*`, `ingestion/sparse_indexer.py`, `vectordb/mongodb_store.py` |
+| **RAG Architectures 2025** (`RAG_Architectures_A_Complete_Guide_for_2025.pdf`) | 4 bước Offline Indexing: Extract & Clean -> Chunking -> Dense Bi-Encoder -> Metadata & Contextual Retrieval; Vector DB lưu vector kèm full payload | `ingestion/cleaner.py`, `ingestion/enricher.py`, `ingestion/embedders/gemini_embedder.py`, `schemas/chunk.py` |
 
 ---
 
@@ -49,49 +49,46 @@ flowchart LR
 
 ### 2.1. Yêu cầu tiên quyết
 
-1. **Python 3.12** (khuyên dùng **Python 3.12.x**, cài từ [python.org](https://www.python.org/downloads/) hoặc tạo qua Conda/pyenv).
-   - *Lưu ý quan trọng:* Tránh dùng Python 3.14 bản quá mới vì một số thư viện xử lý PDF/AI thường thiếu wheel biên dịch sẵn hoặc gây lỗi tương thích với phiên bản mới.
-2. **Docker Desktop & MongoDB** (dùng file `backend/docker-compose.yml` đi kèm để chạy `mongo:latest` tại cổng `27017`, hoặc `backend/docker-compose.atlas.yml` tại cổng `27018`).
+1. **Python 3.12** (khuyên dùng **Python 3.12.16** có sẵn trong Anaconda tại `D:\anaconda3\envs\hand_env\python.exe`).
+   - *Lưu ý quan trọng:* Không dùng Python 3.14 (`D:\anaconda3\python.exe` bản base) vì một số thư viện xử lý PDF/AI thường thiếu wheel biên dịch sẵn hoặc gây lỗi tương thích với phiên bản mới.
+2. **Docker Desktop & MongoDB** (đang chạy container `mongo:latest` tại cổng `27017` theo cấu hình `D:\MongoDB\docker-compose.yml`).
 3. **Google Gemini API Key** (tạo tại Google AI Studio) nếu chạy embedding thật (`EMBEDDING_PROVIDER=gemini`). Nếu chỉ chạy test/demo offline có thể đổi sang `EMBEDDING_PROVIDER=mock`.
 
-### 2.2. Cài đặt môi trường Python (từ thư mục gốc dự án)
+### 2.2. Cài đặt môi trường Python (Windows PowerShell)
 
-#### Cách A: Dùng môi trường ảo `.venv` với Python 3.12 (Khuyên dùng)
+#### Cách A: Dùng môi trường ảo `.venv` đã liên kết với Python 3.12 của Anaconda (Mặc định của dự án)
 
-Nếu trên máy bạn chưa có `backend/.venv`, mở terminal tại thư mục gốc dự án và chạy lần lượt các lệnh sau:
+Nếu trên máy mới chưa có `backend\.venv`, chạy lần lượt các lệnh sau:
 
 ```powershell
 # 1. Di chuyển vào thư mục backend
-cd backend
+cd E:\A\rag-enterprice-system\backend
 
-# 2. Tạo virtual environment cô lập bằng Python 3.12 (Windows)
-py -3.12 -m venv .venv
-# (macOS/Linux: python3.12 -m venv .venv — hoặc thay bằng đường dẫn Python 3.12 trên máy bạn)
+# 2. Tạo virtual environment cô lập từ Python 3.12 của Anaconda
+D:\anaconda3\envs\hand_env\python.exe -m venv .venv
 
 # 3. Cài đặt toàn bộ thư viện
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-# (macOS/Linux: ./.venv/bin/python -m pip install -r requirements.txt)
 ```
 
-> Lưu ý: Tệp `backend/.venv/pyvenv.cfg` đặt `include-system-site-packages = false`, nghĩa là các gói cài trong `.venv` **tách biệt hoàn toàn** với môi trường Python toàn cục trên máy bạn.
+> Lưu ý: Tệp `backend\.venv\pyvenv.cfg` đặt `include-system-site-packages = false`, nghĩa là các gói cài trong `.venv` **tách biệt hoàn toàn**, không làm thay đổi môi trường `hand_env` hay `base` của Anaconda.
 
-#### Cách B: Dùng Conda env riêng biệt (tùy chọn)
+#### Cách B: Dùng Conda env riêng biệt (tùy chọn nếu triển khai trên máy khác)
 
 ```powershell
 conda create -n rag-enterprise python=3.12 -y
 conda activate rag-enterprise
-cd backend
+cd E:\A\rag-enterprice-system\backend
 pip install -r requirements.txt
 ```
 
 ### 2.3. Thiết lập tệp cấu hình `.env`
 
-Hệ thống nạp biến môi trường theo thứ tự ưu tiên: `backend/.env` ghi đè `./.env` ở thư mục gốc dự án (nếu thiếu ở `backend/.env`, tự động đọc fallback từ thư mục gốc dự án).
+Hệ thống nạp biến môi trường theo thứ tự ưu tiên: `backend/.env` ghi đè `E:\A\rag-enterprice-system\.env` (nếu thiếu ở `backend/.env`, tự động đọc fallback từ thư mục gốc dự án).
 
 ```powershell
-# Sao chép file mẫu vào backend/.env (chạy từ thư mục gốc dự án; hoặc Copy-Item .\.env.example .\.env nếu đang ở backend/)
-Copy-Item .\backend\.env.example .\backend\.env
-# (macOS/Linux: cp backend/.env.example backend/.env)
+# Sao chép file mẫu vào backend/.env
+Copy-Item E:\A\rag-enterprice-system\backend\.env.example E:\A\rag-enterprice-system\backend\.env
 ```
 
 Sau đó mở `backend/.env` và điền `GEMINI_API_KEY`:
@@ -103,47 +100,44 @@ EMBEDDING_PROVIDER=gemini
 
 ### 2.4. Bảng giải thích toàn bộ biến môi trường (`backend/.env.example`)
 
-| Biến môi trường                | Mặc định                                                       | Ý nghĩa & lựa chọn                                                                                                                                  |
-| :--------------------------------- | :---------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GEMINI_API_KEY`                 | `""`                                                            | API key Google Gemini để tạo embedding và tóm tắt ngữ cảnh (khi bật `CONTEXTUAL_MODE=llm`).                                                  |
-| `EMBEDDING_PROVIDER`             | `gemini`                                                        | `gemini` (dùng Google Gemini API) hoặc `mock` (dùng `MockEmbedder` offline không tốn quota).                                                 |
-| `GEMINI_EMBEDDING_MODEL`         | `gemini-embedding-001`                                          | Tên model embedding của Google Gemini.                                                                                                                |
-| `GEMINI_EMBEDDING_DIM`           | `768`                                                           | Số chiều vector (`64`–`3072`). Mặc định `768` cân bằng tốt giữa độ chính xác và dung lượng RAM/DB.                               |
-| `GEMINI_CONTEXT_MODEL`           | `gemini-2.0-flash`                                              | Model Gemini dùng để sinh câu tóm tắt ngữ cảnh khi `CONTEXTUAL_MODE=llm`.                                                                     |
-| `MONGODB_URI`                    | `mongodb://admin:password123@localhost:27017/?authSource=admin` | Chuỗi kết nối MongoDB. Mặc định khớp với container Docker trong `backend/docker-compose.yml` (cổng `27017`).                                             |
-| `MONGODB_DB_NAME`                | `rag_enterprise`                                                | Tên database chứa 5 collections của hệ thống.                                                                                                      |
-| `MONGODB_VECTOR_MODE`            | `auto`                                                          | `auto` (tự phát hiện Community hay Atlas), `community` (compound pre-filter + NumPy cosine), `atlas` (bắt buộc `$vectorSearch` HNSW).      |
-| `STORAGE_DIR`                    | `storage`                                                       | Thư mục lưu KB, DLQ, cache BM25 (tương đối theo `backend/` hoặc đường dẫn tuyệt đối).                                                  |
-| `DEFAULT_TENANT_ID`              | `default-org`                                                   | Mã tenant mặc định khi upload không truyền `tenant_id`.                                                                                         |
-| `MAX_FILE_SIZE_MB`               | `50`                                                            | Giới hạn kích thước mỗi file upload (`1`–`500` MB).                                                                                          |
-| `CHUNKING_STRATEGY`              | `recursive`                                                     | Chiến lược cắt văn bản: `recursive` \| `parent_child` \| `semantic`.                                                                        |
-| `CHUNK_SIZE_TOKENS`              | `400`                                                           | Số token tối đa mỗi chunk (cho `recursive` và trần tối đa của `semantic`).                                                                 |
-| `CHUNK_OVERLAP_TOKENS`           | `80`                                                            | Số token gối đầu giữa 2 chunk liên tiếp (~20% của `400`).                                                                                     |
-| `PARENT_CHUNK_SIZE_TOKENS`       | `1000`                                                          | Kích thước Parent chunk khi chọn `CHUNKING_STRATEGY=parent_child`.                                                                                |
-| `PARENT_CHUNK_OVERLAP_TOKENS`    | `100`                                                           | Độ gối đầu giữa các Parent chunk.                                                                                                                |
-| `CHILD_CHUNK_SIZE_TOKENS`        | `250`                                                           | Kích thước Child chunk dùng để embed & tìm kiếm khi chọn `parent_child`.                                                                     |
-| `CHILD_CHUNK_OVERLAP_TOKENS`     | `50`                                                            | Độ gối đầu giữa các Child chunk.                                                                                                                 |
-| `SEMANTIC_BREAKPOINT_PERCENTILE` | `20.0`                                                          | Phân vị ngưỡng similarity để tách đoạn khi chọn `CHUNKING_STRATEGY=semantic` (ví dụ 20% điểm tương đồng thấp nhất sẽ bị ngắt). |
-| `CONTEXTUAL_MODE`                | `header`                                                        | `header` (ghép tiền tố metadata miễn phí) hoặc `llm` (dùng Gemini tóm tắt ngữ cảnh trước khi embed).                                   |
-| `CORS_ORIGINS`                   | `http://localhost:5173,http://localhost:3000`                   | Danh sách origin được phép gọi API (phân cách bằng dấu phẩy).                                                                                |
+| Biến môi trường | Mặc định | Ý nghĩa & lựa chọn |
+| :--- | :--- | :--- |
+| `GEMINI_API_KEY` | `""` | API key Google Gemini để tạo embedding và tóm tắt ngữ cảnh (khi bật `CONTEXTUAL_MODE=llm`). |
+| `EMBEDDING_PROVIDER` | `gemini` | `gemini` (dùng Google Gemini API) hoặc `mock` (dùng `MockEmbedder` offline không tốn quota). |
+| `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-001` | Tên model embedding của Google Gemini. |
+| `GEMINI_EMBEDDING_DIM` | `768` | Số chiều vector (`64`–`3072`). Mặc định `768` cân bằng tốt giữa độ chính xác và dung lượng RAM/DB. |
+| `GEMINI_CONTEXT_MODEL` | `gemini-2.0-flash` | Model Gemini dùng để sinh câu tóm tắt ngữ cảnh khi `CONTEXTUAL_MODE=llm`. |
+| `MONGODB_URI` | `mongodb://admin:password123@localhost:27017/?authSource=admin` | Chuỗi kết nối MongoDB. Mặc định khớp với container Docker tại `D:\MongoDB`. |
+| `MONGODB_DB_NAME` | `rag_enterprise` | Tên database chứa 5 collections của hệ thống. |
+| `MONGODB_VECTOR_MODE` | `auto` | `auto` (tự phát hiện Community hay Atlas), `community` (compound pre-filter + NumPy cosine), `atlas` (bắt buộc `$vectorSearch` HNSW). |
+| `STORAGE_DIR` | `storage` | Thư mục lưu KB, DLQ, cache BM25 (tương đối theo `backend/` hoặc đường dẫn tuyệt đối). |
+| `DEFAULT_TENANT_ID` | `default-org` | Mã tenant mặc định khi upload không truyền `tenant_id`. |
+| `MAX_FILE_SIZE_MB` | `50` | Giới hạn kích thước mỗi file upload (`1`–`500` MB). |
+| `CHUNKING_STRATEGY` | `recursive` | Chiến lược cắt văn bản: `recursive` \| `parent_child` \| `semantic`. |
+| `CHUNK_SIZE_TOKENS` | `400` | Số token tối đa mỗi chunk (cho `recursive` và trần tối đa của `semantic`). |
+| `CHUNK_OVERLAP_TOKENS` | `80` | Số token gối đầu giữa 2 chunk liên tiếp (~20% của `400`). |
+| `PARENT_CHUNK_SIZE_TOKENS` | `1000` | Kích thước Parent chunk khi chọn `CHUNKING_STRATEGY=parent_child`. |
+| `PARENT_CHUNK_OVERLAP_TOKENS` | `100` | Độ gối đầu giữa các Parent chunk. |
+| `CHILD_CHUNK_SIZE_TOKENS` | `250` | Kích thước Child chunk dùng để embed & tìm kiếm khi chọn `parent_child`. |
+| `CHILD_CHUNK_OVERLAP_TOKENS` | `50` | Độ gối đầu giữa các Child chunk. |
+| `SEMANTIC_BREAKPOINT_PERCENTILE` | `20.0` | Phân vị ngưỡng similarity để tách đoạn khi chọn `CHUNKING_STRATEGY=semantic` (ví dụ 20% điểm tương đồng thấp nhất sẽ bị ngắt). |
+| `CONTEXTUAL_MODE` | `header` | `header` (ghép tiền tố metadata miễn phí) hoặc `llm` (dùng Gemini tóm tắt ngữ cảnh trước khi embed). |
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Danh sách origin được phép gọi API (phân cách bằng dấu phẩy). |
 
-### 2.5. Thiết lập MongoDB (Chế độ mặc định vs. Nâng cấp Atlas Local)
+### 2.5. Thiết lập MongoDB (Chế độ hiện tại vs. Nâng cấp Atlas Local)
 
-1. **Chế độ mặc định — Dùng `backend/docker-compose.yml` (`mongo:latest`, cổng `27017`):**
-
-   - Khởi chạy container MongoDB từ thư mục `backend/`:
+1. **Chế độ mặc định — Dùng container `D:\MongoDB` (`mongo:latest`, cổng `27017`):**
+   - Đảm bảo container `mongodb-server` đang chạy:
      ```powershell
-     cd backend
+     cd D:\MongoDB
      docker compose up -d
      ```
-   - *(Hoặc nếu dùng MongoDB cài sẵn trên máy / MongoDB Atlas cloud, điền thẳng `MONGODB_URI` cá nhân vào `backend/.env`.)*
    - Với `MONGODB_VECTOR_MODE=auto`, `MongoDBVectorStore` tự động phát hiện đây là MongoDB Community và chạy chế độ **`community`**: dùng MongoDB Compound Index để lọc trước theo `tenant_id` / `department` / `enabled`, sau đó tính Cosine Similarity bằng NumPy.
 
 2. **Chế độ nâng cấp tương lai — Dùng MongoDB Atlas Local (`$vectorSearch` HNSW + `$search` BM25):**
-
    - Khi lượng dữ liệu lên hàng trăm nghìn chunks và muốn dùng native HNSW, khởi chạy tệp `backend/docker-compose.atlas.yml` (chạy cổng `27018:27017` để không xung đột cổng `27017` cũ):
      ```powershell
-     cd backend
+     cd E:\A\rag-enterprice-system\backend
      docker compose -f docker-compose.atlas.yml up -d
      ```
    - Sau đó cập nhật `MONGODB_URI` trong `backend/.env`:
@@ -159,9 +153,8 @@ EMBEDDING_PROVIDER=gemini
 ### 3.1. Khởi chạy FastAPI Backend Server
 
 ```powershell
-cd backend
+cd E:\A\rag-enterprice-system\backend
 .\.venv\Scripts\python.exe -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
-# (macOS/Linux: ./.venv/bin/python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000)
 ```
 
 - Tài liệu API tương tác (Swagger UI): `http://localhost:8000/docs`
@@ -169,34 +162,26 @@ cd backend
 
 ### 3.2. Kết nối với Frontend (`frontend/`)
 
-1. Tạo `frontend/.env` từ mẫu `frontend/.env.example`:
-   ```powershell
-   Copy-Item .\frontend\.env.example .\frontend\.env
-   ```
-   Kiểm tra nội dung `frontend/.env`:
+1. Mở `E:\A\rag-enterprice-system\frontend\.env.example` làm mẫu và tạo `E:\A\rag-enterprice-system\frontend\.env`:
    ```dotenv
    VITE_USE_MOCK=false
    VITE_API_BASE_URL=http://localhost:8000/api/v1
    ```
-2. Chạy frontend (từ thư mục gốc dự án):
+2. Chạy frontend:
    ```powershell
-   cd frontend
+   cd E:\A\rag-enterprice-system\frontend
    npm install
    npm run dev
    ```
-
    *(Lưu ý: ở giai đoạn hiện tại, backend đã cung cấp đủ các API quản lý & nạp tài liệu `/documents`, `/documents/upload`, `/documents/{id}` khớp với `frontend/src/api/ragClient.ts`; endpoint `/api/v1/query` sẽ được bổ sung ở giai đoạn Retrieval & Generation tiếp theo).*
 
 ### 3.3. Danh sách REST API Endpoints
 
 #### 1) `GET /api/v1/health` — Kiểm tra trạng thái hệ thống & MongoDB
-
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/health" -Method Get
 ```
-
 Kết quả mẫu:
-
 ```json
 {
   "status": "ok",
@@ -225,9 +210,7 @@ Kết quả mẫu:
 ```
 
 #### 2) `POST /api/v1/documents/upload` — Nạp tài liệu mới (Multipart FormData)
-
 Các trường form:
-
 - `file` *(bắt buộc)*: file `.pdf`, `.docx`, `.md`, hoặc `.txt`.
 - `category` *(mặc định `"Kỹ thuật & IT"`)*: `"Nhân sự"`, `"Vận hành"`, `"Kỹ thuật & IT"`, hoặc tên tùy chỉnh.
 - `tenant_id` *(tùy chọn)*: mặc định lấy `DEFAULT_TENANT_ID`.
@@ -235,61 +218,52 @@ Các trường form:
 - `access_groups` *(tùy chọn)*: danh sách nhóm quyền phân cách dấu phẩy, ví dụ `"dept-it,admin"`.
 
 Ví dụ gọi bằng `curl.exe` trên Windows:
-
 ```powershell
 curl.exe -X POST "http://localhost:8000/api/v1/documents/upload" `
-  -F "file=@./path/to/your_document.pdf" `
+  -F "file=@E:\A\rag-enterprice-system\RAG_Architectures_A_Complete_Guide_for_2025.pdf" `
   -F "category=Kỹ thuật & IT"
 ```
 
 #### 3) `GET /api/v1/documents` — Lấy danh sách tài liệu
-
 Hỗ trợ query params tùy chọn `?tenant_id=...&department=...`.
-
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/documents" -Method Get
 ```
-
 Response trả về mảng `DocumentItem` có các khóa camelCase (`sizeLabel`, `chunkCount`, `updatedAt`, `status`, `enabled`, ...) khớp với `frontend/src/types/rag.ts`.
 
 #### 4) `GET /api/v1/documents/{document_id}` & `GET /api/v1/documents/{document_id}/chunks`
-
 - Xem chi tiết một tài liệu hoặc kiểm tra toàn bộ các chunk, trang (`page`), mục (`section`), `contextual_content`, `highlight` đã được index của tài liệu đó (không trả kèm mảng vector `embedding` để nhẹ payload).
 
 #### 5) `PATCH /api/v1/documents/{document_id}` — Bật/tắt tài liệu khỏi kết quả tìm kiếm
-
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/documents/doc-1234567890ab" `
   -Method Patch `
   -ContentType "application/json" `
   -Body '{"enabled": false}'
 ```
-
 Thao tác này cập nhật đồng bộ cả collection `documents`, mọi chunk trong collection `chunks`, và chỉ mục `SparseBM25Index`.
 
 #### 6) `DELETE /api/v1/documents/{document_id}` — Xóa hoàn toàn tài liệu
-
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/documents/doc-1234567890ab" -Method Delete
 ```
-
 Xóa sạch: tệp gốc + `.metadata.json` trong `storage/knowledge_base/`, toàn bộ bản ghi trong `documents`, `chunks`, `parent_chunks` trên MongoDB, và xóa khỏi BM25 index.
 
 #### 7) `POST /api/v1/ingestion/sync`, `GET /api/v1/ingestion/jobs`, `GET /api/v1/ingestion/dlq`
-
 - `POST /api/v1/ingestion/sync?force=false`: quét toàn bộ thư mục `storage/knowledge_base/`, xác thực sidecar từng tệp (Phase 2 Safeguard) và chỉ index những tệp mới hoặc có `content_hash` thay đổi.
 - `GET /api/v1/ingestion/jobs`: xem lịch sử các phiên batch sync.
 - `GET /api/v1/ingestion/dlq`: xem các tệp bị chặn hoặc lỗi trong quá trình ingest.
 
 ### 3.4. Sử dụng công cụ dòng lệnh (CLI)
 
-Chạy từ thư mục `backend/` (từ thư mục gốc dự án, chạy `cd backend`):
+Chạy từ thư mục `E:\A\rag-enterprice-system\backend`:
 
 ```powershell
-# 1. Nạp một hoặc nhiều file vào MongoDB (dùng cấu hình .env, thay bằng đường dẫn tới file của bạn)
+# 1. Nạp một hoặc nhiều file vào MongoDB (dùng cấu hình .env)
 .\.venv\Scripts\python.exe -m src.ingestion.cli ingest `
-  "./path/to/document_1.pdf" `
-  "./path/to/document_2.docx" `
+  "..\RAG_Tutorial_AI_VIET_NAM_114_pages.pdf" `
+  "..\RAG_Architectures_A_Complete_Guide_for_2025.pdf" `
+  "..\Secure_multi_tenant_RAG_with_Amazon_Bedrock_and_Verified_Permissions.docx" `
   --category "Kỹ thuật & IT"
 
 # 2. Chạy Phase 2 batch sync toàn bộ Knowledge Base (bỏ qua file không đổi)
@@ -312,7 +286,6 @@ Chạy từ thư mục `backend/` (từ thư mục gốc dự án, chạy `cd ba
 ```text
 backend/
 ├── .env.example                        # Mẫu biến môi trường
-├── docker-compose.yml                  # Container MongoDB Community (mặc định, cổng 27017)
 ├── docker-compose.atlas.yml            # Container MongoDB Atlas Local (nâng cấp tùy chọn)
 ├── pyproject.toml                      # Cấu hình project & pytest
 ├── requirements.txt                    # Danh sách thư viện Python 3.12
@@ -373,7 +346,6 @@ def category_to_department(category: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_slug).strip("-")
     return f"dept-{slug}" if slug else "dept-general"
 ```
-
 - **Giải thích hoạt động:**
   - Nếu người dùng chọn 1 trong 3 danh mục chuẩn trên UI (`Nhân sự`, `Vận hành`, `Kỹ thuật & IT`), hệ thống ánh xạ thẳng sang `dept-hr`, `dept-ops`, `dept-it`.
   - Nếu có danh mục mới (ví dụ `"Pháp chế"`), hàm tự loại dấu tiếng Việt (NFD -> ASCII) và tạo slug an toàn `dept-phap-che` dùng làm tên thư mục và metadata tag mà không cần sửa code.
@@ -410,13 +382,12 @@ def category_to_department(category: str) -> str:
 **Chức năng:** Giải quyết rủi ro **ingestion race condition** được cảnh báo trong tài liệu AWS Multi-Tenant RAG: tuyệt đối không cho phép tài liệu nào được index vào Vector DB nếu chưa có tệp `.metadata.json` hợp lệ.
 
 - **Phase 1 (`stage_document`):**
-
   1. Kiểm tra định dạng hợp lệ (`.pdf`, `.docx`, `.md`, `.markdown`, `.txt`) và giới hạn dung lượng.
   2. Tính `sha256` của byte nội dung (`compute_sha256`).
   3. Lưu tệp nguồn tại `storage/knowledge_base/{tenant_id}/{department}/{doc_id}/{safe_filename}`.
   4. Ghi tệp `<filename>.metadata.json` bằng kỹ thuật **atomic write** (ghi vào file `.tmp` rồi `replace()`) để tránh sidecar bị ghi dở dang nếu mất điện/crash.
-- **Phase 2 (`validate_sidecar` — Fail-Closed Safeguard):**
 
+- **Phase 2 (`validate_sidecar` — Fail-Closed Safeguard):**
   ```python
   if not sidecar_path.exists():
       raise SidecarValidationError(
@@ -431,7 +402,6 @@ def category_to_department(category: str) -> str:
       if folder_dept != attrs.department:
           raise SidecarValidationError(...)
   ```
-
   - **Cơ chế hoạt động:** Dù tài liệu đến từ Upload API hay bị chép thủ công vào thư mục `knowledge_base/` rồi chạy `sync`, hàm `validate_sidecar()` luôn kiểm tra: (1) file sidecar tồn tại, (2) JSON đúng schema `MetadataSidecar`, (3) `tenant_id` và `department` trong sidecar khớp với đường dẫn thư mục chứa file. Nếu sai bất kỳ điều kiện nào, pipeline **chặn index ngay lập tức** và ghi bản ghi lỗi vào `storage/dlq/` + MongoDB `dlq_events`.
 
 ---
@@ -447,7 +417,7 @@ def category_to_department(category: str) -> str:
    - Duyệt trực tiếp con của `doc.element.body.iterchildren()` để phân biệt `CT_P` (đoạn văn / heading) và `CT_Tbl` (bảng biểu) **theo đúng thứ tự xuất hiện trong tài liệu** (thay vì đọc riêng `doc.paragraphs` và `doc.tables` làm mất vị trí bảng).
    - Các bảng biểu được hàm `_table_to_markdown()` chuyển thành bảng Markdown chuẩn (`| col1 | col2 |`), giữ trọn vẹn cấu trúc cột/hàng khi đưa vào chunk.
 3. **`TextLoader` (`text_loader.py`):**
-   - Đọc UTF-8; với file Markdown (`.md`), tách theo heading `#`..`######` (bỏ qua các dòng `#` nằm trong block code `` ``` ``).
+   - Đọc UTF-8; với file Markdown (`.md`), tách theo heading `#`..`######` (bỏ qua các dòng `#` nằm trong block code ```` ``` ````).
 4. **`TextCleaner` (`cleaner.py`):**
    - Chuẩn hóa toàn bộ văn bản về **Unicode NFC** (`unicodedata.normalize("NFC", text)`): khắc phục lỗi dấu tiếng Việt tách rời (NFD) rất hay gặp khi trích xuất từ PDF.
    - Nối lại các từ bị gạch ngang ngắt dòng (`(\w)-\n(\w)`), loại bỏ ký tự điều khiển vô hình (`\u200b`, `\ufeff`).
@@ -508,18 +478,17 @@ def category_to_department(category: str) -> str:
 
 #### Thiết kế 5 Collections trong MongoDB
 
-| Collection         | Mục đích                                                                                                        | Indexes được tạo tự động                                                                                                                                                                              |
-| :----------------- | :----------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `documents`      | Lưu `DocumentItem` (trạng thái, `chunkCount`, `content_hash`, `tenant_id`, `department`, `enabled`) | Unique `id`; Compound `(tenant_id, department, updated_at)`                                                                                                                                              |
-| `parent_chunks`  | Lưu `ParentChunk` cho chế độ `parent_child`                                                                | Unique `parent_id`; Compound `(document_id, chunk_index)`                                                                                                                                                |
-| `chunks`         | Lưu `ChunkRecord` kèm mảng `embedding` (`float[768]`) và metadata phân quyền                           | Unique `id`; Compound `idx_isolation_prefilter(tenant_id, department, enabled, document_id)`; `idx_access_groups`; `idx_doc_chunk`; Text index `idx_chunks_text(content, section, document_title)` |
-| `ingestion_jobs` | Lưu lịch sử các lần chạy `sync` / `cli`                                                                  | Unique `job_id`; `started_at`                                                                                                                                                                            |
-| `dlq_events`     | Lưu sự cố sidecar / parse / embed (Dead-Letter Queue)                                                           | Unique `dlq_id`; `created_at`                                                                                                                                                                            |
+| Collection | Mục đích | Indexes được tạo tự động |
+| :--- | :--- | :--- |
+| `documents` | Lưu `DocumentItem` (trạng thái, `chunkCount`, `content_hash`, `tenant_id`, `department`, `enabled`) | Unique `id`; Compound `(tenant_id, department, updated_at)` |
+| `parent_chunks` | Lưu `ParentChunk` cho chế độ `parent_child` | Unique `parent_id`; Compound `(document_id, chunk_index)` |
+| `chunks` | Lưu `ChunkRecord` kèm mảng `embedding` (`float[768]`) và metadata phân quyền | Unique `id`; Compound `idx_isolation_prefilter(tenant_id, department, enabled, document_id)`; `idx_access_groups`; `idx_doc_chunk`; Text index `idx_chunks_text(content, section, document_title)` |
+| `ingestion_jobs` | Lưu lịch sử các lần chạy `sync` / `cli` | Unique `job_id`; `started_at` |
+| `dlq_events` | Lưu sự cố sidecar / parse / embed (Dead-Letter Queue) | Unique `dlq_id`; `created_at` |
 
 #### Cơ chế Dual-Mode (`auto` | `community` | `atlas`)
-
 - Trong `ensure_indexes()`, nếu `MONGODB_VECTOR_MODE` là `auto` hoặc `atlas`, hệ thống gọi `chunks_col.list_search_indexes()` và tạo `chunks_vector_index` (`type="vectorSearch"`, `similarity="cosine"`, kèm 6 trường filter: `tenant_id`, `department`, `category`, `document_id`, `enabled`, `access_groups`) và `chunks_atlas_text_index`.
-- Khi kết nối vào container `mongo:latest` (MongoDB Community), MongoDB trả `OperationFailure` vì không có `mongot`. Chế độ `auto` bắt lỗi này một cách êm ái và chuyển `active_vector_mode = "community"`:
+- Khi kết nối vào container `mongo:latest` ở `D:\MongoDB`, MongoDB trả `OperationFailure` vì không có `mongot`. Chế độ `auto` bắt lỗi này một cách êm ái và chuyển `active_vector_mode = "community"`:
   - **`community` mode (`_community_vector_search`):** Thực thi `chunks_col.find(mongo_filter)` sử dụng compound index `idx_isolation_prefilter` để lọc trước toàn bộ chunk hợp lệ ở tầng DB, rồi nhân ma trận NumPy `mat @ q` tính Cosine Similarity cực nhanh.
   - **`atlas` mode (`_atlas_vector_search`):** Chạy aggregation pipeline `$vectorSearch` với `filter`, `numCandidates` và `limit` ngay trong HNSW engine.
 
@@ -567,18 +536,18 @@ sequenceDiagram
 
 Bộ test `pytest` gồm **5 tệp / 14 test cases**, sử dụng `MockEmbedder` và `InMemoryVectorStore` để chạy nhanh, không cần mạng và không tốn quota API:
 
-| Tệp kiểm thử                          | Số test | Nội dung xác minh                                                                                                                                                                                                                  |
-| :--------------------------------------- | :------: | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/test_kb_sidecar_safeguard.py`   |    4    | Phase 1 tạo sidecar + Phase 2 thành công; file thiếu `.metadata.json` bị chặn & ghi DLQ; lệch `department` giữa thư mục và sidecar bị chặn; `sync` bỏ qua file không đổi `content_hash`.                    |
-| `tests/test_loaders_and_cleaner.py`    |    4    | Chuẩn hóa Unicode NFD -> NFC tiếng Việt + xóa header/footer lặp trên PDF; load `.md`/`.txt`; `DocxLoader` chuyển bảng thành Markdown; đọc thực tế các file PDF/DOCX lớn trong workspace.                       |
-| `tests/test_chunkers.py`               |    3    | `RecursiveChunker` giữ ngưỡng token & metadata; `ParentChildChunker` liên kết đúng `parent_id`; `SemanticChunker` tách đoạn theo chuyển dịch ngữ nghĩa.                                                        |
-| `tests/test_enricher_and_isolation.py` |    2    | Cô lập dữ liệu `dept-hr` vs `dept-it`, fail-closed khi filter rỗng, ẩn tài liệu khi `enabled=False`, xóa sạch khi `DELETE`, và kiểm tra tiền tố ngữ cảnh `header`.                                         |
-| `tests/test_api_and_e2e.py`            |    1    | Kiểm thử toàn vòng đời FastAPI qua `TestClient`: `/health`, `/documents/upload` (kiểm tra khóa JSON camelCase khớp frontend), `/documents`, `/documents/{id}/chunks`, `PATCH`, `/ingestion/sync`, `DELETE`. |
+| Tệp kiểm thử | Số test | Nội dung xác minh |
+| :--- | :---: | :--- |
+| `tests/test_kb_sidecar_safeguard.py` | 4 | Phase 1 tạo sidecar + Phase 2 thành công; file thiếu `.metadata.json` bị chặn & ghi DLQ; lệch `department` giữa thư mục và sidecar bị chặn; `sync` bỏ qua file không đổi `content_hash`. |
+| `tests/test_loaders_and_cleaner.py` | 4 | Chuẩn hóa Unicode NFD -> NFC tiếng Việt + xóa header/footer lặp trên PDF; load `.md`/`.txt`; `DocxLoader` chuyển bảng thành Markdown; đọc thực tế các file PDF/DOCX lớn trong workspace. |
+| `tests/test_chunkers.py` | 3 | `RecursiveChunker` giữ ngưỡng token & metadata; `ParentChildChunker` liên kết đúng `parent_id`; `SemanticChunker` tách đoạn theo chuyển dịch ngữ nghĩa. |
+| `tests/test_enricher_and_isolation.py` | 2 | Cô lập dữ liệu `dept-hr` vs `dept-it`, fail-closed khi filter rỗng, ẩn tài liệu khi `enabled=False`, xóa sạch khi `DELETE`, và kiểm tra tiền tố ngữ cảnh `header`. |
+| `tests/test_api_and_e2e.py` | 1 | Kiểm thử toàn vòng đời FastAPI qua `TestClient`: `/health`, `/documents/upload` (kiểm tra khóa JSON camelCase khớp frontend), `/documents`, `/documents/{id}/chunks`, `PATCH`, `/ingestion/sync`, `DELETE`. |
 
 **Lệnh chạy toàn bộ bộ test:**
 
 ```powershell
-cd backend
+cd E:\A\rag-enterprice-system\backend
 .\.venv\Scripts\python.exe -m pytest tests -v
 ```
 
@@ -588,18 +557,17 @@ cd backend
 
 ### 7.1. Xử lý sự cố thường gặp (Troubleshooting)
 
-| Triệu chứng / Lỗi                                                              | Nguyên nhân                                                                                                      | Cách khắc phục                                                                                                                 |
-| :-------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------- |
-| `GEMINI_API_KEY is missing`                                                     | Chưa tạo `.env` hoặc chưa điền key khi `EMBEDDING_PROVIDER=gemini`                                       | Điền `GEMINI_API_KEY=...` vào `backend/.env` hoặc đổi `EMBEDDING_PROVIDER=mock` để test offline.                    |
-| `ServerSelectionTimeoutError` / `Authentication failed` khi kết nối MongoDB | Container MongoDB Docker chưa chạy hoặc sai URI/mật khẩu                                                      | Kiểm tra `docker ps`, chạy `docker compose up -d` trong thư mục `backend/` (hoặc container MongoDB cá nhân của bạn), đối chiếu `MONGODB_URI` trong `backend/.env`. |
-| `MONGODB_VECTOR_MODE=atlas requested, but server does not support Atlas Search` | Đang bật ép `atlas` nhưng trỏ vào container `mongo:latest` (Community)                                   | Đổi về `MONGODB_VECTOR_MODE=auto` (hoặc `community`), hoặc chạy `docker-compose.atlas.yml` ở cổng `27018`.        |
-| Tài liệu bị đẩy vào `storage/dlq/` khi chạy `sync`                     | Chép thẳng file vào `storage/knowledge_base/...` mà không qua upload/staging nên thiếu `.metadata.json` | Luôn nạp file qua API `/documents/upload` hoặc CLI `ingest` để Phase 1 sinh sidecar hợp lệ trước khi `sync`.       |
-| Lỗi cài thư viện (`onnxruntime`, `pymupdf`) khi tự tạo lại env         | Dùng nhầm Python 3.14 thay vì Python 3.12                                                                       | Xóa `.venv` tạo lại bằng `py -3.12 -m venv .venv` (hoặc đường dẫn Python 3.12 trên máy bạn).                      |
+| Triệu chứng / Lỗi | Nguyên nhân | Cách khắc phục |
+| :--- | :--- | :--- |
+| `GEMINI_API_KEY is missing` | Chưa tạo `.env` hoặc chưa điền key khi `EMBEDDING_PROVIDER=gemini` | Điền `GEMINI_API_KEY=...` vào `backend/.env` hoặc đổi `EMBEDDING_PROVIDER=mock` để test offline. |
+| `ServerSelectionTimeoutError` / `Authentication failed` khi kết nối MongoDB | Container MongoDB Docker chưa chạy hoặc sai URI/mật khẩu | Kiểm tra `docker ps`, chạy `docker compose up -d` tại `D:\MongoDB`, đối chiếu `MONGODB_URI` trong `backend/.env`. |
+| `MONGODB_VECTOR_MODE=atlas requested, but server does not support Atlas Search` | Đang bật ép `atlas` nhưng trỏ vào container `mongo:latest` (Community) | Đổi về `MONGODB_VECTOR_MODE=auto` (hoặc `community`), hoặc chạy `docker-compose.atlas.yml` ở cổng `27018`. |
+| Tài liệu bị đẩy vào `storage/dlq/` khi chạy `sync` | Chép thẳng file vào `storage/knowledge_base/...` mà không qua upload/staging nên thiếu `.metadata.json` | Luôn nạp file qua API `/documents/upload` hoặc CLI `ingest` để Phase 1 sinh sidecar hợp lệ trước khi `sync`. |
+| Lỗi cài thư viện (`onnxruntime`, `pymupdf`) khi tự tạo lại env | Dùng nhầm Python 3.14 thay vì Python 3.12 | Xóa `.venv` tạo lại bằng `D:\anaconda3\envs\hand_env\python.exe -m venv .venv`. |
 
 ### 7.2. Điểm nối sang giai đoạn tiếp theo (Retrieval & Generation)
 
 Hệ thống hiện tại đã nâng cấp đầy đủ tầng AI Retrieval, Streaming & Workspace giống NotebookLM:
-
 1. **Multi-Provider AI API (`src/llm/`):** Hỗ trợ chuyển đổi linh hoạt qua `.env` giữa `gemini` (`google-genai`) và `openai_compatible` (OpenAI, OpenRouter, Groq, DeepSeek, Ollama local) tách biệt hoàn toàn với `EMBEDDING_PROVIDER`.
 2. **RAG Pipeline nâng cao (`src/retrieval/`):** Multi-turn `QueryRewriter`, Hybrid Search + RRF, `Reranker` (`lexical` | `llm` | `none`), Small-to-Big `ParentChunk` expansion theo token budget, dynamic highlight, và SSE Streaming (`POST /api/v1/query/stream`).
 3. **NotebookLM Workspace (`src/storage/workspace_store.py`, `src/retrieval/studio.py`):**
