@@ -6,6 +6,17 @@ export type DocumentStatus = 'ready' | 'chunking' | 'embedding' | 'error';
 
 export type ConnectionState = 'checking' | 'connected' | 'degraded' | 'offline';
 
+export type GenerationMode = 'llm' | 'extractive_fallback';
+
+export type StudioGenerateType =
+  | 'summary'
+  | 'faq'
+  | 'briefing'
+  | 'study_guide'
+  | 'comparison_table';
+
+export type NoteType = 'pinned' | StudioGenerateType | 'custom';
+
 export interface DocumentChunk {
   id: string;
   documentId: string;
@@ -38,6 +49,13 @@ export interface DocumentItem {
 export interface CitationItem extends DocumentChunk {
   citationNumber: number;
   score: number;
+  usedInAnswer?: boolean;
+  parentContent?: string | null;
+}
+
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface ChatMessage {
@@ -48,24 +66,47 @@ export interface ChatMessage {
   citations?: CitationItem[];
   latencyMs?: number;
   isStreaming?: boolean;
+  statusText?: string;
+  generationMode?: GenerationMode;
+  modelUsed?: string | null;
+  providerUsed?: string | null;
+  rewrittenQuery?: string | null;
+  followUpQuestions?: string[];
+  warning?: string | null;
   error?: string;
 }
 
 export interface QueryRequest {
   question: string;
-  documentIds: string[];
+  documentIds?: string[];
   topK?: number;
+  history?: ChatTurn[];
+  conversationId?: string | null;
+  notebookId?: string | null;
+  useReranker?: boolean;
 }
 
 export interface QueryResponse {
   answer: string;
   citations: CitationItem[];
   latencyMs: number;
+  generationMode?: GenerationMode;
+  modelUsed?: string | null;
+  providerUsed?: string | null;
+  rewrittenQuery?: string | null;
+  followUpQuestions?: string[];
+  warning?: string | null;
+  conversationId?: string | null;
 }
 
 export interface HealthResponse {
   status: 'ok' | 'degraded';
   embedding_provider: string;
+  embedding_model?: string;
+  llm_provider?: string;
+  llm_model?: string;
+  llm_configured?: boolean;
+  reranker_provider?: string;
   chunking_strategy: string;
   contextual_mode: string;
   vectordb: {
@@ -96,4 +137,71 @@ export interface IngestionJobResult {
   errors: string[];
   started_at: string;
   finished_at: string;
+}
+
+export interface NotebookItem {
+  id: string;
+  title: string;
+  description: string;
+  documentIds: string[];
+  overview: string;
+  suggestedQuestions: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotebookOverviewResponse {
+  overview: string;
+  suggestedQuestions: string[];
+  modelUsed?: string | null;
+  generationMode: GenerationMode;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  notebookId?: string | null;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationItem {
+  id: string;
+  title: string;
+  notebookId?: string | null;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NoteItem {
+  id: string;
+  notebookId?: string | null;
+  title: string;
+  content: string;
+  noteType: NoteType;
+  sourceDocumentIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudioGenerateResponse {
+  title: string;
+  content: string;
+  type: StudioGenerateType;
+  generationMode: GenerationMode;
+  modelUsed?: string | null;
+  note?: NoteItem | null;
+}
+
+export interface SourceGuideResponse {
+  documentId: string;
+  documentTitle: string;
+  summary: string;
+  keyTopics: string[];
+  suggestedQuestions: string[];
+  chunkCount: number;
+  generationMode: GenerationMode;
+  modelUsed?: string | null;
 }

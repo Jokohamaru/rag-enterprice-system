@@ -9,7 +9,7 @@ from typing import Literal
 from src.config.settings import Settings
 from src.ingestion.chunkers import BaseChunker, ParentChildChunker, RecursiveChunker, SemanticChunker
 from src.ingestion.cleaner import TextCleaner
-from src.ingestion.embedders import EmbeddingProvider, GeminiEmbedder, MockEmbedder
+from src.ingestion.embedders import EmbeddingProvider, GeminiEmbedder, MockEmbedder, OpenAICompatibleEmbedder
 from src.ingestion.enricher import ChunkEnricher
 from src.ingestion.loaders import load_document
 from src.ingestion.sparse_indexer import SparseBM25Index
@@ -34,9 +34,17 @@ def _format_display_date(iso_ts: str | None = None) -> str:
 def build_embedder(settings: Settings) -> EmbeddingProvider:
     if settings.embedding_provider == "mock":
         return MockEmbedder(dim=settings.gemini_embedding_dim)
+    if settings.embedding_provider == "openai_compatible":
+        return OpenAICompatibleEmbedder(
+            api_key=settings.resolved_embedding_api_key,
+            base_url=settings.embedding_base_url,
+            model=settings.resolved_embedding_model,
+            output_dimensionality=settings.gemini_embedding_dim,
+            timeout_seconds=settings.llm_timeout_seconds,
+        )
     return GeminiEmbedder(
-        api_key=settings.gemini_api_key,
-        model=settings.gemini_embedding_model,
+        api_key=settings.resolved_embedding_api_key,
+        model=settings.resolved_embedding_model,
         output_dimensionality=settings.gemini_embedding_dim,
     )
 

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from src.api.deps import AppServices, get_services
 from src.schemas.chunk import ChunkRecord
 from src.schemas.document import DocumentItem, DocumentUpdateRequest
+from src.schemas.workspace import SourceGuideResponse
 from src.storage.kb_store import SidecarValidationError
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -66,6 +67,17 @@ def get_document_chunks(
     if doc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
     return services.vector_store.get_document_chunks(document_id)
+
+
+@router.get("/{document_id}/guide", response_model=SourceGuideResponse)
+def get_document_guide(
+    document_id: str,
+    services: AppServices = Depends(get_services),
+) -> SourceGuideResponse:
+    guide = services.studio_service.generate_source_guide(document_id)
+    if guide is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    return guide
 
 
 @router.patch("/{document_id}", response_model=DocumentItem)

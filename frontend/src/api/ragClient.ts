@@ -1,26 +1,39 @@
 import { INITIAL_CHUNKS, INITIAL_DOCUMENTS } from '../data/mockData';
 import type {
   CitationItem,
+  ConversationItem,
+  ConversationSummary,
   DocumentCategory,
   DocumentChunk,
   DocumentFormat,
   DocumentItem,
   HealthResponse,
   IngestionJobResult,
+  NotebookItem,
+  NotebookOverviewResponse,
+  NoteItem,
+  NoteType,
   QueryRequest,
   QueryResponse,
+  SourceGuideResponse,
+  StudioGenerateResponse,
+  StudioGenerateType,
 } from '../types/rag';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
-const RAW_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8000/api/v1';
+const RAW_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8000/api/v1';
 const API_BASE_URL = RAW_BASE_URL.replace(/\/+$/, '');
 
 export const isMockMode = USE_MOCK;
 export const apiBaseUrl = API_BASE_URL;
 
-// In-memory store for mock mode so uploaded documents become immediately searchable
+// In-memory store for mock mode so uploaded documents & workspace items work offline
 let mockDocuments: DocumentItem[] = [...INITIAL_DOCUMENTS];
 let mockChunks: DocumentChunk[] = [...INITIAL_CHUNKS];
+let mockNotebooks: NotebookItem[] = [];
+let mockConversations: ConversationItem[] = [];
+let mockNotes: NoteItem[] = [];
 
 async function parseApiError(res: Response, fallback: string): Promise<string> {
   try {
@@ -42,7 +55,7 @@ async function parseApiError(res: Response, fallback: string): Promise<string> {
       if (text) return text;
     }
   } catch {
-    // Ignore parse errors and return fallback below
+    // Ignore parse errors
   }
   return `${fallback} (HTTP ${res.status}).`;
 }
@@ -161,6 +174,10 @@ export async function fetchHealth(): Promise<HealthResponse> {
   return {
     status: 'ok',
     embedding_provider: 'mock',
+    llm_provider: 'mock',
+    llm_model: 'notebooklm-demo',
+    llm_configured: true,
+    reranker_provider: 'lexical',
     chunking_strategy: 'recursive',
     contextual_mode: 'header',
     vectordb: { ok: true, backend: 'mock', vector_mode: 'memory' },
@@ -180,7 +197,7 @@ export async function fetchDocuments(): Promise<DocumentItem[]> {
     return res.json();
   }
 
-  await new Promise((r) => setTimeout(r, 120));
+  await new Promise((r) => setTimeout(r, 90));
   return [...mockDocuments];
 }
 
@@ -193,30 +210,40 @@ export async function fetchDocumentChunks(documentId: string): Promise<DocumentC
     return res.json();
   }
 
-  await new Promise((r) => setTimeout(r, 80));
+  await new Promise((r) => setTimeout(r, 60));
   return mockChunks.filter((c) => c.documentId === documentId);
 }
 
-export async function queryRag(req: QueryRequest): Promise<QueryResponse> {
-  const startedAt = performance.now();
-
+export async function fetchDocumentGuide(documentId: string): Promise<SourceGuideResponse> {
   if (!USE_MOCK) {
-    const res = await fetch(`${API_BASE_URL}/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req),
-    });
+    const res = await fetch(`${API_BASE_URL}/documents/${encodeURIComponent(documentId)}/guide`);
     if (!res.ok) {
-      throw new Error(await parseApiError(res, 'Truy vấn thất bại'));
+      throw new Error(await parseApiError(res, 'Không thể tải tóm tắt tài liệu'));
     }
     return res.json();
   }
 
-  await new Promise((r) => setTimeout(r, 420));
+  const doc = mockDocuments.find((d) => d.id === documentId);
+  const chunks = mockChunks.filter((c) => c.documentId === documentId);
+  return {
+    documentId,
+    documentTitle: doc?.title ?? 'Tài liệu',
+    summary: doc?.summary ?? 'Tài liệu nội bộ.',
+    keyTopics: chunks.map((c) => c.section).slice(0, 4),
+    suggestedQuestions: [
+      `Tóm tắt các điểm chính trong ${doc?.title ?? 'tài liệu này'}?`,
+      'Các điều kiện hoặc thời hạn cần lưu ý là gì?',
+    ],
+    chunkCount: chunks.length,
+    generationMode: 'extractive_fallback',
+    modelUsed: 'mock',
+  };
+}
 
-  const allowedIds = new Set(req.documentIds);
+function runMockQuery(req: QueryRequest, startedAt: number): QueryResponse {
+  const allowedIds = new Set(req.documentIds ?? mockDocuments.filter((d) => d.enabled).map((d) => d.id));
   const queryNorm = normalizeText(req.question);
-  const topK = req.topK ?? 3;
+  const topK = req.topK ?? 5;
 
   const ranked = mockChunks
     .filter((chunk) => allowedIds.has(chunk.documentId))
@@ -240,12 +267,157 @@ export async function queryRag(req: QueryRequest): Promise<QueryResponse> {
     ...item.chunk,
     citationNumber: idx + 1,
     score: Number(Math.max(0.55, Math.min(0.97, item.score + 0.12)).toFixed(2)),
+    usedInAnswer: true,
   }));
 
   const answer = buildMockAnswer(req.question, citations);
-  const latencyMs = Math.round(performance.now() - startedAt + 310);
+  const latencyMs = Math.round(performance.now() - startedAt + 280);
 
-  return { answer, citations, latencyMs };
+  return {
+    answer,
+    citations,
+    latencyMs,
+    generationMode: 'llm',
+    modelUsed: 'notebooklm-demo',
+    providerUsed: 'mock',
+    followUpQuestions: citations.slice(0, 2).map((c) => `Chi tiết thêm về ${c.section} trong ${c.documentTitle}?`),
+    conversationId: req.conversationId ?? null,
+  };
+}
+
+export async function queryRag(req: QueryRequest): Promise<QueryResponse> {
+  const startedAt = performance.now();
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      throw new Error(await parseApiError(res, 'Truy vấn thất bại'));
+    }
+    return res.json();
+  }
+
+  await new Promise((r) => setTimeout(r, 320));
+  return runMockQuery(req, startedAt);
+}
+
+export interface StreamQueryCallbacks {
+  onStatus?: (message: string, stage?: string) => void;
+  onCitations?: (citations: CitationItem[]) => void;
+  onDelta?: (textChunk: string) => void;
+  onDone?: (response: QueryResponse) => void;
+}
+
+export async function streamQueryRag(
+  req: QueryRequest,
+  callbacks: StreamQueryCallbacks,
+  signal?: AbortSignal
+): Promise<QueryResponse> {
+  const startedAt = performance.now();
+
+  if (USE_MOCK) {
+    callbacks.onStatus?.('Đang tìm kiếm trên các nguồn đang bật...', 'retrieving');
+    await new Promise((r) => setTimeout(r, 220));
+    const full = runMockQuery(req, startedAt);
+    callbacks.onCitations?.(full.citations);
+
+    const words = full.answer.split(/(\s+)/);
+    for (let i = 0; i < words.length; i += 4) {
+      if (signal?.aborted) break;
+      callbacks.onDelta?.(words.slice(i, i + 4).join(''));
+      await new Promise((r) => setTimeout(r, 24));
+    }
+    callbacks.onDone?.(full);
+    return full;
+  }
+
+  const res = await fetch(`${API_BASE_URL}/query/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+    signal,
+  });
+
+  if (!res.ok || !res.body) {
+    throw new Error(await parseApiError(res, 'Truy vấn streaming thất bại'));
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let finalResponse: QueryResponse | null = null;
+  let streamedAnswer = '';
+  let latestCitations: CitationItem[] = [];
+
+  const handleEventBlock = (block: string) => {
+    const lines = block.split(/\r?\n/);
+    let eventName = 'message';
+    const dataLines: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trim());
+      }
+    }
+    if (dataLines.length === 0) return;
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(dataLines.join('\n')) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+
+    if (eventName === 'status') {
+      callbacks.onStatus?.(String(payload.message ?? ''), String(payload.stage ?? ''));
+    } else if (eventName === 'citations') {
+      const cits = (payload.citations as CitationItem[]) ?? [];
+      latestCitations = cits;
+      callbacks.onCitations?.(cits);
+    } else if (eventName === 'delta') {
+      const piece = String(payload.text ?? '');
+      if (piece) {
+        streamedAnswer += piece;
+        callbacks.onDelta?.(piece);
+      }
+    } else if (eventName === 'error') {
+      throw new Error(String(payload.detail ?? 'Lỗi xử lý truy vấn'));
+    } else if (eventName === 'done') {
+      finalResponse = payload as unknown as QueryResponse;
+      callbacks.onDone?.(finalResponse);
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split(/\r?\n\r?\n/);
+    buffer = parts.pop() ?? '';
+    for (const part of parts) {
+      if (part.trim()) {
+        handleEventBlock(part);
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    handleEventBlock(buffer);
+  }
+
+  if (finalResponse) {
+    return finalResponse;
+  }
+
+  return {
+    answer: streamedAnswer,
+    citations: latestCitations,
+    latencyMs: Math.round(performance.now() - startedAt),
+    generationMode: 'extractive_fallback',
+  };
 }
 
 export async function uploadDocument(
@@ -314,25 +486,9 @@ export async function uploadDocument(
   mockDocuments = [draftDoc, ...mockDocuments];
   onStatusChange?.(draftDoc);
 
-  let textPreview = '';
-  if (file.name.endsWith('.md') || file.name.endsWith('.txt')) {
-    try {
-      const raw = await file.text();
-      textPreview = raw.trim().slice(0, 420);
-    } catch {
-      textPreview = '';
-    }
-  }
-
-  await new Promise((r) => setTimeout(r, 650));
-  const embeddingDoc: DocumentItem = { ...draftDoc, status: 'embedding' };
-  mockDocuments = mockDocuments.map((d) => (d.id === docId ? embeddingDoc : d));
-  onStatusChange?.(embeddingDoc);
-
-  await new Promise((r) => setTimeout(r, 750));
-  const readyDoc: DocumentItem = { ...embeddingDoc, status: 'ready' };
+  await new Promise((r) => setTimeout(r, 400));
+  const readyDoc: DocumentItem = { ...draftDoc, status: 'ready' };
   mockDocuments = mockDocuments.map((d) => (d.id === docId ? readyDoc : d));
-
   mockChunks = [
     {
       id: `chk-${docId}-1`,
@@ -342,14 +498,11 @@ export async function uploadDocument(
       section: 'Mục 1 — Nội dung vừa lập chỉ mục',
       page: 1,
       chunkIndex: 1,
-      content:
-        textPreview ||
-        `Nội dung trích xuất từ tệp ${file.name} thuộc danh mục ${category}. Tài liệu đã được tách thành ${readyDoc.chunkCount} đoạn (chunks) và lưu vào kho vector để trả lời câu hỏi nội bộ.`,
-      highlight: textPreview ? textPreview.slice(0, 90) : file.name,
+      content: `Nội dung trích xuất từ tệp ${file.name} thuộc danh mục ${category}.`,
+      highlight: file.name,
     },
     ...mockChunks,
   ];
-
   onStatusChange?.(readyDoc);
   return readyDoc;
 }
@@ -367,11 +520,8 @@ export async function updateDocumentEnabled(documentId: string, enabled: boolean
     return res.json();
   }
 
-  await new Promise((r) => setTimeout(r, 80));
   const found = mockDocuments.find((d) => d.id === documentId);
-  if (!found) {
-    throw new Error('Không tìm thấy tài liệu.');
-  }
+  if (!found) throw new Error('Không tìm thấy tài liệu.');
   const updated = { ...found, enabled };
   mockDocuments = mockDocuments.map((d) => (d.id === documentId ? updated : d));
   return updated;
@@ -388,7 +538,6 @@ export async function deleteDocument(documentId: string): Promise<void> {
     return;
   }
 
-  await new Promise((r) => setTimeout(r, 150));
   mockDocuments = mockDocuments.filter((d) => d.id !== documentId);
   mockChunks = mockChunks.filter((c) => c.documentId !== documentId);
 }
@@ -404,7 +553,6 @@ export async function syncKnowledgeBase(force = false): Promise<IngestionJobResu
     return res.json();
   }
 
-  await new Promise((r) => setTimeout(r, 200));
   const now = new Date().toISOString();
   return {
     job_id: `mock-job-${Date.now()}`,
@@ -420,4 +568,258 @@ export async function syncKnowledgeBase(force = false): Promise<IngestionJobResu
     started_at: now,
     finished_at: now,
   };
+}
+
+// === Notebooks ===
+
+export async function fetchNotebooks(): Promise<NotebookItem[]> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/notebooks`);
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể tải danh sách Notebook'));
+    return res.json();
+  }
+  return [...mockNotebooks];
+}
+
+export async function createNotebook(
+  title: string,
+  documentIds: string[],
+  description = ''
+): Promise<NotebookItem> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/notebooks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, documentIds, description }),
+    });
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể tạo Notebook'));
+    return res.json();
+  }
+  const now = new Date().toISOString();
+  const nb: NotebookItem = {
+    id: `nb-${Date.now()}`,
+    title,
+    description,
+    documentIds,
+    overview: '',
+    suggestedQuestions: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  mockNotebooks = [nb, ...mockNotebooks];
+  return nb;
+}
+
+export async function updateNotebook(
+  notebookId: string,
+  patch: Partial<Pick<NotebookItem, 'title' | 'description' | 'documentIds'>>
+): Promise<NotebookItem> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/notebooks/${encodeURIComponent(notebookId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể cập nhật Notebook'));
+    return res.json();
+  }
+  const idx = mockNotebooks.findIndex((n) => n.id === notebookId);
+  if (idx === -1) throw new Error('Không tìm thấy Notebook');
+  const updated = { ...mockNotebooks[idx], ...patch, updatedAt: new Date().toISOString() };
+  mockNotebooks[idx] = updated;
+  return updated;
+}
+
+export async function deleteNotebook(notebookId: string): Promise<void> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/notebooks/${encodeURIComponent(notebookId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể xóa Notebook'));
+    return;
+  }
+  mockNotebooks = mockNotebooks.filter((n) => n.id !== notebookId);
+}
+
+export async function generateNotebookOverview(
+  documentIds: string[],
+  notebookId?: string | null
+): Promise<NotebookOverviewResponse> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/notebooks/overview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ documentIds, notebookId: notebookId ?? null }),
+    });
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể tạo tổng quan Notebook'));
+    return res.json();
+  }
+  const docs = mockDocuments.filter((d) => documentIds.includes(d.id));
+  return {
+    overview: `Tổng hợp ${docs.length} nguồn tài liệu nội bộ đang bật.`,
+    suggestedQuestions: docs.slice(0, 3).map((d) => `Những điểm chính trong ${d.title}?`),
+    modelUsed: 'mock',
+    generationMode: 'extractive_fallback',
+  };
+}
+
+// === Conversations ===
+
+export async function fetchConversations(notebookId?: string | null): Promise<ConversationSummary[]> {
+  if (!USE_MOCK) {
+    const qs = notebookId ? `?notebook_id=${encodeURIComponent(notebookId)}` : '';
+    const res = await fetch(`${API_BASE_URL}/conversations${qs}`);
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể tải lịch sử hội thoại'));
+    return res.json();
+  }
+  return mockConversations
+    .filter((c) => !notebookId || c.notebookId === notebookId)
+    .map((c) => ({
+      id: c.id,
+      title: c.title,
+      notebookId: c.notebookId,
+      messageCount: c.messages.length,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+    }));
+}
+
+export async function createConversation(
+  title = 'Cuộc hội thoại mới',
+  notebookId?: string | null
+): Promise<ConversationItem> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/conversations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, notebookId: notebookId ?? null }),
+    });
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể tạo cuộc hội thoại'));
+    return res.json();
+  }
+  const now = new Date().toISOString();
+  const conv: ConversationItem = {
+    id: `conv-${Date.now()}`,
+    title,
+    notebookId: notebookId ?? null,
+    messages: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  mockConversations = [conv, ...mockConversations];
+  return conv;
+}
+
+export async function fetchConversation(conversationId: string): Promise<ConversationItem> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/conversations/${encodeURIComponent(conversationId)}`);
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể tải cuộc hội thoại'));
+    return res.json();
+  }
+  const found = mockConversations.find((c) => c.id === conversationId);
+  if (!found) throw new Error('Không tìm thấy cuộc hội thoại');
+  return found;
+}
+
+export async function deleteConversation(conversationId: string): Promise<void> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/conversations/${encodeURIComponent(conversationId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể xóa cuộc hội thoại'));
+    return;
+  }
+  mockConversations = mockConversations.filter((c) => c.id !== conversationId);
+}
+
+// === Studio & Notes ===
+
+export async function generateStudioArtifact(
+  type: StudioGenerateType,
+  documentIds: string[],
+  notebookId?: string | null,
+  customInstruction?: string
+): Promise<StudioGenerateResponse> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/studio/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type,
+        documentIds,
+        notebookId: notebookId ?? null,
+        saveAsNote: true,
+        customInstruction,
+      }),
+    });
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể tạo nội dung Studio'));
+    return res.json();
+  }
+
+  const now = new Date().toISOString();
+  const content = `### Kết quả ${type}\n\nTổng hợp từ ${documentIds.length} nguồn đang bật.`;
+  const note: NoteItem = {
+    id: `note-${Date.now()}`,
+    notebookId: notebookId ?? null,
+    title: `Studio (${type})`,
+    content,
+    noteType: type,
+    sourceDocumentIds: documentIds,
+    createdAt: now,
+    updatedAt: now,
+  };
+  mockNotes = [note, ...mockNotes];
+  return { title: note.title, content, type, generationMode: 'extractive_fallback', note };
+}
+
+export async function fetchNotes(notebookId?: string | null): Promise<NoteItem[]> {
+  if (!USE_MOCK) {
+    const qs = notebookId ? `?notebook_id=${encodeURIComponent(notebookId)}` : '';
+    const res = await fetch(`${API_BASE_URL}/notes${qs}`);
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể tải danh sách ghi chú'));
+    return res.json();
+  }
+  return mockNotes.filter((n) => !notebookId || n.notebookId === notebookId);
+}
+
+export async function createNote(payload: {
+  title: string;
+  content: string;
+  noteType?: NoteType;
+  notebookId?: string | null;
+  sourceDocumentIds?: string[];
+}): Promise<NoteItem> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể lưu ghi chú'));
+    return res.json();
+  }
+  const now = new Date().toISOString();
+  const note: NoteItem = {
+    id: `note-${Date.now()}`,
+    notebookId: payload.notebookId ?? null,
+    title: payload.title,
+    content: payload.content,
+    noteType: payload.noteType ?? 'pinned',
+    sourceDocumentIds: payload.sourceDocumentIds ?? [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  mockNotes = [note, ...mockNotes];
+  return note;
+}
+
+export async function deleteNote(noteId: string): Promise<void> {
+  if (!USE_MOCK) {
+    const res = await fetch(`${API_BASE_URL}/notes/${encodeURIComponent(noteId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(await parseApiError(res, 'Không thể xóa ghi chú'));
+    return;
+  }
+  mockNotes = mockNotes.filter((n) => n.id !== noteId);
 }

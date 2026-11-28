@@ -6,12 +6,24 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.deps import AppServices
-from src.api.routes import documents_router, health_router, ingestion_router, query_router
+from src.api.routes import (
+    conversations_router,
+    documents_router,
+    health_router,
+    ingestion_router,
+    notebooks_router,
+    query_router,
+    studio_router,
+)
 from src.config.settings import Settings, get_settings
 from src.ingestion.pipeline import IngestionPipeline, build_embedder
 from src.ingestion.sparse_indexer import SparseBM25Index
+from src.llm.base import LLMProvider
+from src.llm.factory import build_llm_provider
 from src.retrieval.service import RAGQueryService
+from src.retrieval.studio import StudioService
 from src.storage.kb_store import KnowledgeBaseStore
+from src.storage.workspace_store import InMemoryWorkspaceStore, MongoWorkspaceStore, WorkspaceStore
 from src.vectordb.base import VectorStore
 from src.vectordb.mongodb_store import MongoDBVectorStore
 
@@ -20,6 +32,8 @@ def build_services(
     settings: Settings,
     *,
     vector_store: VectorStore | None = None,
+    llm_provider: LLMProvider | None = None,
+    workspace_store: WorkspaceStore | None = None,
 ) -> AppServices:
     kb_store = KnowledgeBaseStore(
         storage_dir=settings.resolved_storage_dir,
@@ -32,8 +46,19 @@ def build_services(
         embedding_dim=settings.gemini_embedding_dim,
     )
     store.ensure_indexes()
+
+    ws_store = workspace_store
+    if ws_store is None:
+        if isinstance(store, MongoDBVectorStore):
+            ws_store = MongoWorkspaceStore(store.db)
+        else:
+            ws_store = InMemoryWorkspaceStore()
+    ws_store.ensure_indexes()
+
     embedder = build_embedder(settings)
+    llm = llm_provider or build_llm_provider(settings)
     bm25 = SparseBM25Index(settings.resolved_storage_dir / "bm25" / "index.json")
+
     pipeline = IngestionPipeline(
         settings=settings,
         kb_store=kb_store,
@@ -46,13 +71,24 @@ def build_services(
         vector_store=store,
         embedder=embedder,
         bm25_index=bm25,
+        llm_provider=llm,
+        workspace_store=ws_store,
+    )
+    studio_service = StudioService(
+        settings=settings,
+        vector_store=store,
+        llm_provider=llm,
+        workspace_store=ws_store,
     )
     return AppServices(
         settings=settings,
         kb_store=kb_store,
         vector_store=store,
+        workspace_store=ws_store,
+        llm_provider=llm,
         pipeline=pipeline,
         query_service=query_service,
+        studio_service=studio_service,
     )
 
 
@@ -60,22 +96,34 @@ def create_app(
     settings: Settings | None = None,
     *,
     vector_store: VectorStore | None = None,
+    llm_provider: LLMProvider | None = None,
+    workspace_store: WorkspaceStore | None = None,
 ) -> FastAPI:
     cfg = settings or get_settings()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         if not hasattr(application.state, "services") or application.state.services is None:
-            application.state.services = build_services(cfg, vector_store=vector_store)
+            application.state.services = build_services(
+                cfg,
+                vector_store=vector_store,
+                llm_provider=llm_provider,
+                workspace_store=workspace_store,
+            )
         yield
 
     application = FastAPI(
-        title="Enterprise RAG Ingestion & Vector DB API",
-        version="0.1.0",
+        title="Enterprise RAG & NotebookLM API",
+        version="0.2.0",
         lifespan=lifespan,
     )
-    if vector_store is not None:
-        application.state.services = build_services(cfg, vector_store=vector_store)
+    if vector_store is not None or llm_provider is not None or workspace_store is not None:
+        application.state.services = build_services(
+            cfg,
+            vector_store=vector_store,
+            llm_provider=llm_provider,
+            workspace_store=workspace_store,
+        )
 
     application.add_middleware(
         CORSMiddleware,
@@ -89,6 +137,9 @@ def create_app(
     application.include_router(documents_router, prefix="/api/v1")
     application.include_router(ingestion_router, prefix="/api/v1")
     application.include_router(query_router, prefix="/api/v1")
+    application.include_router(notebooks_router, prefix="/api/v1")
+    application.include_router(conversations_router, prefix="/api/v1")
+    application.include_router(studio_router, prefix="/api/v1")
     return application
 
 

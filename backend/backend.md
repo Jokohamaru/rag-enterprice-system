@@ -567,7 +567,12 @@ cd E:\A\rag-enterprice-system\backend
 
 ### 7.2. Điểm nối sang giai đoạn tiếp theo (Retrieval & Generation)
 
-Hệ thống hiện tại đã chuẩn bị sẵn đầy đủ dữ liệu nền cho giai đoạn truy xuất & sinh câu trả lời:
-1. **Hybrid Search + RRF:** Kết hợp `vector_store.vector_search(...)` (Dense Vector) và `bm25_index.search(...)` / `vector_store.keyword_search(...)` (Sparse Keyword), trộn kết quả bằng thuật toán **Reciprocal Rank Fusion (RRF)**.
-2. **Small-to-Big Context Expansion:** Nếu ingest với `CHUNKING_STRATEGY=parent_child`, tầng Retrieval dùng `chunk.parent_id` gọi `vector_store.get_parent_chunk(parent_id)` để lấy toàn bộ Parent Chunk đầy đủ ngữ cảnh đưa vào LLM.
-3. **API `/api/v1/query`:** Triển khai endpoint `POST /api/v1/query` (nhận `question`, `documentIds`, `topK` theo `frontend/src/types/rag.ts`) với `SearchFilter` bắt buộc theo phòng ban người dùng, sau đó gọi Gemini để sinh câu trả lời kèm danh sách `citations`.
+Hệ thống hiện tại đã nâng cấp đầy đủ tầng AI Retrieval, Streaming & Workspace giống NotebookLM:
+1. **Multi-Provider AI API (`src/llm/`):** Hỗ trợ chuyển đổi linh hoạt qua `.env` giữa `gemini` (`google-genai`) và `openai_compatible` (OpenAI, OpenRouter, Groq, DeepSeek, Ollama local) tách biệt hoàn toàn với `EMBEDDING_PROVIDER`.
+2. **RAG Pipeline nâng cao (`src/retrieval/`):** Multi-turn `QueryRewriter`, Hybrid Search + RRF, `Reranker` (`lexical` | `llm` | `none`), Small-to-Big `ParentChunk` expansion theo token budget, dynamic highlight, và SSE Streaming (`POST /api/v1/query/stream`).
+3. **NotebookLM Workspace (`src/storage/workspace_store.py`, `src/retrieval/studio.py`):**
+   - `GET/POST/PATCH/DELETE /api/v1/notebooks` & `POST /api/v1/notebooks/overview`
+   - `GET/POST/PATCH/DELETE /api/v1/conversations` (lưu lịch sử hội thoại trên MongoDB)
+   - `POST /api/v1/studio/generate` (`summary`, `faq`, `briefing`, `study_guide`, `comparison_table`) & `GET/POST/DELETE /api/v1/notes`
+   - `GET /api/v1/documents/{document_id}/guide` (Source Guide)
+4. **Đánh giá chất lượng truy xuất (`scripts/eval_rag.py`):** Chạy `.\.venv\Scripts\python.exe scripts/eval_rag.py` để kiểm tra Recall@K và độ trễ.

@@ -13,6 +13,7 @@ def test_fastapi_ingestion_lifecycle_matches_frontend_contract(tmp_path: Path) -
     settings = Settings(
         storage_dir=str(tmp_path / "storage"),
         embedding_provider="mock",
+        llm_provider="none",
         gemini_embedding_dim=128,
         chunk_size_tokens=200,
         chunk_overlap_tokens=40,

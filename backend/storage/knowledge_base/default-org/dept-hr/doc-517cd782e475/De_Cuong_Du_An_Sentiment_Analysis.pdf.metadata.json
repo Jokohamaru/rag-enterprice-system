@@ -1,0 +1,17 @@
+{
+  "metadataAttributes": {
+    "tenant_id": "default-org",
+    "department": "dept-hr",
+    "category": "Nhân sự",
+    "access_groups": [
+      "admin",
+      "dept-hr"
+    ],
+    "document_id": "doc-517cd782e475",
+    "title": "De Cuong Du An Sentiment Analysis",
+    "format": "PDF",
+    "content_hash": "f57b168ecf21616b0aa912df0a4bbfa42f1aec8c41913ae0e1c531afea89f67d",
+    "version": 1,
+    "updated_at": "2026-11-28T04:33:17.509298+00:00"
+  }
+}

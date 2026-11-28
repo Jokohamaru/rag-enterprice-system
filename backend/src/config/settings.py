@@ -43,13 +43,31 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Embedding & LLM (Google Gemini)
+    # Embedding & LLM (Google Gemini + OpenAI-Compatible)
     gemini_api_key: str = ""
-    embedding_provider: Literal["gemini", "mock"] = "gemini"
+    embedding_provider: Literal["gemini", "openai_compatible", "mock"] = "gemini"
+    embedding_api_key: str = ""
+    embedding_base_url: str = "https://api.openai.com/v1"
+    embedding_model: str = ""
     gemini_embedding_model: str = "gemini-embedding-001"
     gemini_embedding_dim: int = Field(default=768, ge=64, le=3072)
-    gemini_context_model: str = "gemini-2.0-flash"
-    gemini_generation_model: str = "gemini-2.0-flash"
+    gemini_context_model: str = "gemini-2.5-flash-lite"
+    gemini_generation_model: str = "gemini-2.5-flash"
+
+    llm_provider: Literal["gemini", "openai_compatible", "none"] = "gemini"
+    llm_api_key: str = ""
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_model: str = ""
+    llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    llm_max_tokens: int = Field(default=2048, ge=128, le=16384)
+    llm_timeout_seconds: float = Field(default=45.0, ge=5.0, le=300.0)
+
+    # Retrieval & Reranking
+    retrieval_default_top_k: int = Field(default=6, ge=1, le=20)
+    retrieval_candidate_k: int = Field(default=20, ge=5, le=100)
+    reranker_provider: Literal["none", "lexical", "llm"] = "lexical"
+    query_rewrite_enabled: bool = True
+    context_max_tokens: int = Field(default=6000, ge=1000, le=64000)
 
     # MongoDB Vector Database
     mongodb_uri: str = "mongodb://admin:password123@localhost:27017/?authSource=admin"
@@ -85,6 +103,38 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def resolved_llm_api_key(self) -> str:
+        if self.llm_api_key.strip():
+            return self.llm_api_key.strip()
+        if self.llm_provider == "gemini":
+            return self.gemini_api_key.strip()
+        return ""
+
+    @property
+    def resolved_llm_model(self) -> str:
+        if self.llm_model.strip():
+            return self.llm_model.strip()
+        if self.llm_provider == "gemini":
+            return self.gemini_generation_model.strip() or "gemini-2.5-flash"
+        return "gpt-4o-mini"
+
+    @property
+    def resolved_embedding_api_key(self) -> str:
+        if self.embedding_api_key.strip():
+            return self.embedding_api_key.strip()
+        if self.embedding_provider == "gemini":
+            return self.gemini_api_key.strip()
+        return self.llm_api_key.strip()
+
+    @property
+    def resolved_embedding_model(self) -> str:
+        if self.embedding_model.strip():
+            return self.embedding_model.strip()
+        if self.embedding_provider == "gemini":
+            return self.gemini_embedding_model.strip() or "gemini-embedding-001"
+        return "text-embedding-3-small"
 
 
 @lru_cache
