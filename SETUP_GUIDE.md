@@ -2,13 +2,15 @@
 
 Tài liệu này hướng dẫn từng bước cách cài đặt môi trường, cấu hình AI Model API (Google Gemini / OpenAI / OpenRouter / Groq / Ollama), khởi chạy cơ sở dữ liệu MongoDB, chạy Backend + Frontend, kiểm thử và xử lý sự cố.
 
+> **Lưu ý về đường dẫn:** Toàn bộ câu lệnh dưới đây sử dụng **đường dẫn tương đối** tính từ thư mục gốc của dự án (sau khi bạn clone hoặc giải nén mã nguồn về máy).
+
 ---
 
 ## 1. Yêu cầu tiên quyết (Prerequisites)
 
 Trước khi bắt đầu, hãy đảm bảo máy tính của bạn đã cài đặt:
 
-1. **Python 3.12** (khuyên dùng **Python 3.12.16** hoặc tạo môi trường riêng từ Anaconda tại `D:\anaconda3\envs\hand_env\python.exe`).
+1. **Python 3.12** (khuyên dùng **Python 3.12.x**, cài trực tiếp từ [python.org](https://www.python.org/downloads/) hoặc tạo môi trường riêng qua Conda/pyenv).
    - *Lưu ý:* Tránh dùng Python 3.14 bản quá mới vì một số gói xử lý PDF/tính toán số học có thể thiếu wheel biên dịch sẵn trên Windows.
 2. **Node.js 18+ (khuyên dùng 20 LTS)** kèm `npm` để chạy và build Frontend React + Vite.
 3. **Docker Desktop** (để chạy MongoDB Community hoặc MongoDB Atlas Local).
@@ -20,17 +22,17 @@ Trước khi bắt đầu, hãy đảm bảo máy tính của bạn đã cài đ
 
 ## 2. Bước 1 — Khởi chạy Cơ sở dữ liệu MongoDB
 
-Hệ thống sử dụng **MongoDB Dual-Mode** (`auto` tự nhận diện Community hay Atlas Search). Chọn **1 trong 2** cách dưới đây:
+Hệ thống sử dụng **MongoDB Dual-Mode** (`auto` tự nhận diện Community hay Atlas Search). Chọn **1 trong 2** cách dưới đây (chạy lệnh từ thư mục gốc dự án):
 
 ### Cách A: Dùng MongoDB Community (Mặc định, nhẹ, cổng `27017`)
-Nếu bạn đã có container MongoDB tại `D:\MongoDB`:
+Khởi chạy nhanh bằng file [backend/docker-compose.yml](backend/docker-compose.yml) đi kèm sẵn trong dự án:
 
 ```powershell
-cd D:\MongoDB
+cd backend
 docker compose up -d
 ```
 
-Hoặc chạy nhanh một container MongoDB mới bằng Docker:
+Hoặc chạy trực tiếp một container MongoDB bằng Docker CLI:
 
 ```powershell
 docker run -d --name mongodb-rag `
@@ -40,7 +42,9 @@ docker run -d --name mongodb-rag `
   mongo:latest
 ```
 
-Chuỗi kết nối tương ứng:
+> *Lưu ý:* Nếu máy bạn đã cài đặt sẵn MongoDB cục bộ hoặc dùng MongoDB từ xa (MongoDB Atlas cloud / server riêng), bạn có thể bỏ qua bước Docker và điền trực tiếp chuỗi kết nối cá nhân vào `MONGODB_URI` trong `backend/.env`.
+
+Chuỗi kết nối mặc định tương ứng:
 ```dotenv
 MONGODB_URI=mongodb://admin:password123@localhost:27017/?authSource=admin
 MONGODB_VECTOR_MODE=auto
@@ -50,7 +54,7 @@ MONGODB_VECTOR_MODE=auto
 Khi lượng dữ liệu lớn (hàng chục nghìn đến hàng trăm nghìn đoạn văn bản), bạn có thể bật container Atlas Local đi kèm sẵn trong dự án tại [backend/docker-compose.atlas.yml](backend/docker-compose.atlas.yml):
 
 ```powershell
-cd E:\A\rag-enterprice-system\backend
+cd backend
 docker compose -f docker-compose.atlas.yml up -d
 ```
 
@@ -66,29 +70,32 @@ MONGODB_VECTOR_MODE=auto
 
 ### 3.1. Tạo Virtual Environment (`.venv`) và cài đặt thư viện
 
-Mở Windows PowerShell và chạy lần lượt:
+Mở terminal tại thư mục gốc dự án (ví dụ Windows PowerShell) và chạy lần lượt:
 
 ```powershell
-cd E:\A\rag-enterprice-system\backend
+cd backend
 
-# Tạo môi trường ảo cô lập bằng Python 3.12
-D:\anaconda3\envs\hand_env\python.exe -m venv .venv
+# Tạo môi trường ảo cô lập bằng Python 3.12 (Windows)
+py -3.12 -m venv .venv
+# (macOS/Linux: python3.12 -m venv .venv — hoặc thay bằng đường dẫn Python 3.12/Conda trên máy bạn)
 
 # Cài đặt toàn bộ phụ thuộc trong requirements.txt
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+# (macOS/Linux: ./.venv/bin/python -m pip install -r requirements.txt)
 ```
 
-> Nếu máy bạn không dùng đường dẫn Anaconda trên, thay `D:\anaconda3\envs\hand_env\python.exe` bằng đường dẫn tới Python 3.12 trên máy bạn (`py -3.12 -m venv .venv`).
+> Nếu máy bạn không dùng lệnh `py -3.12` (ví dụ dùng Conda hoặc cài Python ở thư mục tùy chọn), hãy thay `py -3.12` bằng đường dẫn tới `python.exe` (Python 3.12) trên máy bạn, hoặc tạo môi trường trực tiếp bằng `conda create -n rag-enterprise python=3.12 -y`.
 
 ### 3.2. Tạo tệp cấu hình `backend/.env`
 
-Sao chép từ file mẫu [backend/.env.example](backend/.env.example):
+Sao chép từ file mẫu [backend/.env.example](backend/.env.example) (chạy từ thư mục gốc dự án; nếu đang ở trong `backend/`, dùng `Copy-Item .\.env.example .\.env`):
 
 ```powershell
-Copy-Item E:\A\rag-enterprice-system\backend\.env.example E:\A\rag-enterprice-system\backend\.env
+Copy-Item .\backend\.env.example .\backend\.env
+# (macOS/Linux: cp backend/.env.example backend/.env)
 ```
 
-> **Thứ tự nạp `.env`:** Backend đọc từ `E:\A\rag-enterprice-system\.env` làm nền, sau đó `backend/.env` sẽ **ghi đè** các biến tương ứng (xem `Settings.model_config` trong `backend/src/config/settings.py`).
+> **Thứ tự nạp `.env`:** Backend đọc từ `./.env` ở thư mục gốc dự án làm nền, sau đó `backend/.env` sẽ **ghi đè** các biến tương ứng (xem `Settings.model_config` trong `backend/src/config/settings.py`).
 
 ### 3.3. Chọn cấu hình AI Model API phù hợp
 
@@ -166,7 +173,7 @@ GEMINI_EMBEDDING_DIM=768
 
 > **Cảnh báo quan trọng khi đổi Embedding:** Nếu bạn chuyển `EMBEDDING_PROVIDER` (ví dụ từ `mock` sang `gemini`) hoặc thay đổi `GEMINI_EMBEDDING_DIM`, **bắt buộc phải chạy re-index** để đồng bộ lại vector cho các tài liệu cũ trong MongoDB:
 > ```powershell
-> cd E:\A\rag-enterprice-system\backend
+> cd backend
 > .\.venv\Scripts\python.exe -m src.ingestion.cli sync --force
 > ```
 
@@ -174,10 +181,11 @@ GEMINI_EMBEDDING_DIM=768
 
 ## 4. Bước 3 — Cài đặt & Cấu hình Frontend (`frontend/`)
 
-1. Tạo file `frontend/.env` từ mẫu [frontend/.env.example](frontend/.env.example):
+1. Tạo file `frontend/.env` từ mẫu [frontend/.env.example](frontend/.env.example) (chạy từ thư mục gốc dự án):
 
 ```powershell
-Copy-Item E:\A\rag-enterprice-system\frontend\.env.example E:\A\rag-enterprice-system\frontend\.env
+Copy-Item .\frontend\.env.example .\frontend\.env
+# (macOS/Linux: cp frontend/.env.example frontend/.env)
 ```
 
 2. Đảm bảo nội dung `frontend/.env` trỏ đúng vào Backend thật (`VITE_USE_MOCK=false`):
@@ -192,7 +200,7 @@ VITE_API_BASE_URL=http://localhost:8000/api/v1
 3. Cài đặt gói npm:
 
 ```powershell
-cd E:\A\rag-enterprice-system\frontend
+cd frontend
 npm install
 ```
 
@@ -200,12 +208,13 @@ npm install
 
 ## 5. Bước 4 — Khởi chạy toàn bộ hệ thống & Kiểm tra
 
-Mở **2 cửa sổ PowerShell riêng biệt**:
+Mở **2 cửa sổ terminal riêng biệt** tại **thư mục gốc dự án**:
 
 ### Terminal 1 — Khởi chạy FastAPI Backend (Cổng `8000`)
 ```powershell
-cd E:\A\rag-enterprice-system\backend
+cd backend
 .\.venv\Scripts\python.exe -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+# (macOS/Linux: ./.venv/bin/python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000)
 ```
 
 Kiểm tra nhanh Backend đã nhận đúng Model AI & MongoDB chưa:
@@ -218,7 +227,7 @@ Kiểm tra nhanh Backend đã nhận đúng Model AI & MongoDB chưa:
 
 ### Terminal 2 — Khởi chạy Vite Frontend (Cổng `5173`)
 ```powershell
-cd E:\A\rag-enterprice-system\frontend
+cd frontend
 npm run dev
 ```
 
@@ -226,12 +235,12 @@ Mở trình duyệt truy cập **`http://localhost:5173`**.
 
 ### Nạp tài liệu nhanh qua CLI (tùy chọn thay cho kéo-thả trên web)
 ```powershell
-cd E:\A\rag-enterprice-system\backend
+cd backend
 
-# Nạp một hoặc nhiều file kèm danh mục
+# Nạp một hoặc nhiều file kèm danh mục (thay bằng đường dẫn tới file tài liệu của bạn)
 .\.venv\Scripts\python.exe -m src.ingestion.cli ingest `
-  "..\RAG_Architectures_A_Complete_Guide_for_2025.pdf" `
-  "..\RAG_Tutorial_AI_VIET_NAM_114_pages.pdf" `
+  "./path/to/tai_lieu_1.pdf" `
+  "./path/to/tai_lieu_2.docx" `
   --category "Kỹ thuật & IT"
 
 # Xem thống kê số lượng documents / chunks trong MongoDB
@@ -242,22 +251,24 @@ cd E:\A\rag-enterprice-system\backend
 
 ## 6. Bước 5 — Chạy bộ Kiểm thử & Đánh giá chất lượng RAG
 
+(Các lệnh bên dưới chạy từ thư mục gốc dự án.)
+
 ### 6.1. Kiểm thử Backend (`pytest`)
 ```powershell
-cd E:\A\rag-enterprice-system\backend
+cd backend
 .\.venv\Scripts\python.exe -m pytest tests -v
 ```
 Bộ test gồm 7 file (19 test cases) chạy hoàn toàn cô lập bằng `InMemoryVectorStore` và mock HTTP transport.
 
 ### 6.2. Đánh giá độ chính xác truy xuất (`eval_rag.py`)
 ```powershell
-cd E:\A\rag-enterprice-system\backend
+cd backend
 .\.venv\Scripts\python.exe scripts/eval_rag.py
 ```
 
 ### 6.3. Kiểm tra TypeScript & Production Build Frontend
 ```powershell
-cd E:\A\rag-enterprice-system\frontend
+cd frontend
 npm run build
 ```
 
